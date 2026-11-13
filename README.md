@@ -1,5 +1,10 @@
 # OpenWrt Router for Home Assistant
 
+<img src="icon.png" width="96" align="right" alt="">
+
+**Integration, sidebar page and Android app for routers running OpenWrt.**
+Not affiliated with the OpenWrt project.
+
 Routers and access points running OpenWrt, read over ubus (the JSON interface behind LuCI).
 One router is the entry point; the other access points of the same network are found
 through `usteer` and use the same login.
@@ -39,8 +44,10 @@ change, which costs about half a minute of Wi-Fi on that band.
 
 ## Install
 
-Copy `custom_components/openwrt_router` into the `custom_components` folder of Home
-Assistant, restart, then add "OpenWrt Router" from Settings > Devices & services.
+With HACS: add `https://github.com/cash83/openwrt-router-ha` as a custom repository of
+type "Integration", install "OpenWrt Router" and restart Home Assistant. By hand: copy
+`custom_components/openwrt_router` into the `custom_components` folder and restart.
+Then add "OpenWrt Router" from Settings > Devices & services.
 
 ## Development
 
@@ -61,4 +68,8 @@ reach the network in two ways, chosen on its first screen:
   it directly (`assets/direct.js` mirrors `api.py`). Works on the home network or
   through a VPN. The public IP is asked by the router itself (needs the rights file).
 
-Build (JDK 17, Gradle 8.7, Android SDK 35): `gradle assembleDebug` in `android`.
+The ready-made APK is attached to each [release](https://github.com/cash83/openwrt-router-ha/releases).
+It is signed with a development key, so Android asks to allow installation from the
+browser or file manager you open it with.
+
+Build it yourself (JDK 17, Gradle 8.7, Android SDK 35): `gradle assembleDebug` in `android`.

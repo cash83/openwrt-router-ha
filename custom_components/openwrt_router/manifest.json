@@ -1,12 +1,19 @@
 {
   "domain": "openwrt_router",
   "name": "OpenWrt Router",
-  "codeowners": [],
+  "codeowners": [
+    "@cash83"
+  ],
   "config_flow": true,
-  "dependencies": ["http", "frontend", "websocket_api"],
-  "documentation": "https://openwrt.org/docs/guide-developer/ubus",
+  "dependencies": [
+    "http",
+    "frontend",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/cash83/openwrt-router-ha",
   "integration_type": "hub",
   "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/cash83/openwrt-router-ha/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.4.5"
 }
