@@ -29,6 +29,9 @@ input:focus,textarea:focus{border-color:var(--primary-color)}
 .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin-bottom:6px;border-radius:16px;background:var(--divider-color)}
 .tab{min-height:44px;border:0;border-radius:12px;background:none;color:var(--secondary-text-color);font:inherit;font-size:14.5px;font-weight:600}
 .tab.on{background:var(--card-background-color);color:var(--primary-text-color);box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.pw{position:relative}.pw input{padding-right:54px}
+.eye{position:absolute;top:0;right:0;width:52px;height:100%;border:0;background:none;color:var(--secondary-text-color);display:grid;place-items:center}
+.eye .shut{display:none}.eye.on .open{display:none}.eye.on .shut{display:block}.eye.on{color:var(--primary-color)}
 .hint.first{margin:14px 2px 2px;font-size:13.5px}
 .switchrow{display:flex;align-items:center;gap:14px;margin-top:18px;padding:14px;border:1px solid var(--divider-color);
   border-radius:14px;background:var(--card-background-color)}
@@ -85,7 +88,11 @@ ol{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5;color:var(--s
     <label for="hUser">Utente</label>
     <input id="hUser" type="text" autocomplete="off" autocapitalize="off">
     <label for="hPass">Password</label>
-    <input id="hPass" type="password" autocomplete="off">
+    <div class="pw"><input id="hPass" type="password" autocomplete="off">
+      <button class="eye" type="button" data-for="hPass" aria-label="Mostra la password" aria-pressed="false">
+        <svg class="open" viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 5C7 5 2.7 8.1 1 12c1.7 3.9 6 7 11 7s9.3-3.1 11-7c-1.7-3.9-6-7-11-7m0 11.5A4.5 4.5 0 1 1 12 7.5a4.5 4.5 0 0 1 0 9m0-7.2a2.7 2.7 0 1 0 0 5.4 2.7 2.7 0 0 0 0-5.4z"/></svg>
+        <svg class="shut" viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M2.4 3.3 1 4.7l3.2 3.2A12.3 12.3 0 0 0 1 12c1.7 3.9 6 7 11 7 1.6 0 3.1-.3 4.5-.9l3.2 3.2 1.4-1.4L2.4 3.3M12 16.5a4.5 4.5 0 0 1-4.2-6.1l1.5 1.5a2.7 2.7 0 0 0 2.8 2.8l1.5 1.5c-.5.2-1 .3-1.6.3M12 5c5 0 9.3 3.1 11 7a12.2 12.2 0 0 1-3.8 4.7l-2.8-2.8A4.5 4.5 0 0 0 11.1 7.6L8.7 5.3C9.7 5.1 10.8 5 12 5z"/></svg>
+      </button></div>
     <div id="mfa" hidden>
       <label for="hCode">Codice di verifica</label>
       <input id="hCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Dall'app di autenticazione">
@@ -109,7 +116,11 @@ ol{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5;color:var(--s
     <label for="rUser">Utente</label>
     <input id="rUser" type="text" value="root" autocomplete="off" autocapitalize="off">
     <label for="rPass">Password</label>
-    <input id="rPass" type="password" placeholder="Password del router" autocomplete="off">
+    <div class="pw"><input id="rPass" type="password" placeholder="Password del router" autocomplete="off">
+      <button class="eye" type="button" data-for="rPass" aria-label="Mostra la password" aria-pressed="false">
+        <svg class="open" viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 5C7 5 2.7 8.1 1 12c1.7 3.9 6 7 11 7s9.3-3.1 11-7c-1.7-3.9-6-7-11-7m0 11.5A4.5 4.5 0 1 1 12 7.5a4.5 4.5 0 0 1 0 9m0-7.2a2.7 2.7 0 1 0 0 5.4 2.7 2.7 0 0 0 0-5.4z"/></svg>
+        <svg class="shut" viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M2.4 3.3 1 4.7l3.2 3.2A12.3 12.3 0 0 0 1 12c1.7 3.9 6 7 11 7 1.6 0 3.1-.3 4.5-.9l3.2 3.2 1.4-1.4L2.4 3.3M12 16.5a4.5 4.5 0 0 1-4.2-6.1l1.5 1.5a2.7 2.7 0 0 0 2.8 2.8l1.5 1.5c-.5.2-1 .3-1.6.3M12 5c5 0 9.3 3.1 11 7a12.2 12.2 0 0 1-3.8 4.7l-2.8-2.8A4.5 4.5 0 0 0 11.1 7.6L8.7 5.3C9.7 5.1 10.8 5 12 5z"/></svg>
+      </button></div>
   </div>
 
   <div class="switchrow">

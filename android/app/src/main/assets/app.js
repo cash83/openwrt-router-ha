@@ -312,6 +312,7 @@
     $("hPass").value = "";
     $("hPass").placeholder = config.signedIn ? "Lascia vuoto per tenere l'accesso già fatto" : "";
     $("hCode").value = "";
+    hidePasswords();
     mfaFlow = "";
     $("mfa").hidden = true;
     paint();
@@ -417,6 +418,22 @@
   $("tabRouter").addEventListener("click", () => { mode = "router"; paint(); });
   $("auto").addEventListener("click", () => { auto.on = !auto.on; paint(); });
   $("remember").addEventListener("click", () => { remember = !remember; paint(); });
+  document.querySelectorAll(".eye").forEach((eye) => eye.addEventListener("click", () => {
+    const field = $(eye.dataset.for);
+    const show = field.type === "password";
+    field.type = show ? "text" : "password";
+    eye.classList.toggle("on", show);
+    eye.setAttribute("aria-pressed", String(show));
+    eye.setAttribute("aria-label", show ? "Nascondi la password" : "Mostra la password");
+  }));
+  /** Typed passwords are hidden again whenever the screen is drawn afresh. */
+  function hidePasswords() {
+    document.querySelectorAll(".eye").forEach((eye) => {
+      $(eye.dataset.for).type = "password";
+      eye.classList.remove("on");
+      eye.setAttribute("aria-pressed", "false");
+    });
+  }
   $("mClose").addEventListener("click", closeMenu);
   $("menu").addEventListener("click", (event) => { if (event.target.id === "menu") closeMenu(); });
   $("mEdit").addEventListener("click", () => { closeMenu(); showSetup(""); });
