@@ -29,6 +29,9 @@ through `usteer` and use the same login.
 - **Send a device to a node**: from its card, "connect to" another node. The other nodes
   turn it away for a minute, so it joins the chosen one; afterwards it is free to roam.
 - **Services** `openwrt_router.kick_client` and `openwrt_router.block_client`.
+- **The router's own sections in that page**: the sliders button at the top right opens
+  status, system and network of each node (log, DHCP and static addresses, port forwards,
+  services, packages, backup, diagnostics), the same pages the Android app shows.
 - **A page in the sidebar** ("Wi-Fi") designed for a phone: state of the network, the
   nodes, the Wi-Fi settings and the list of devices with quick actions. It loads nothing
   from the internet, so it opens the same way at home and through a VPN.

@@ -19,6 +19,8 @@ PANEL_URL_PATH = "openwrt-router"
 PANEL_COMPONENT = "openwrt-router-panel"
 PANEL_FILE = "frontend/openwrt-router-panel.js"
 PANEL_STATIC_URL = "/openwrt_router_static/openwrt-router-panel.js"
+PAGES_FILE = "frontend/openwrt-router-pages.js"
+PAGES_STATIC_URL = "/openwrt_router_static/openwrt-router-pages.js"
 
 SERVICE_KICK = "kick_client"
 SERVICE_BLOCK = "block_client"

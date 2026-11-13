@@ -241,7 +241,21 @@ class OpenWrtRouterPanel extends HTMLElement {
     if (menu) menu.style.display = value ? "" : "none";
   }
 
-  /** Set by a host that can open the router's own pages (the Android app). */
+  /** Home Assistant hands over the panel's configuration: where the router's sections are. */
+  set panel(value) {
+    const url = value && value.config && value.config.pages_url;
+    if (!url || this._pages) return;
+    this._pages = true;
+    const ready = () => { this.routerMenu = true; };
+    if (window.RouterPages) return ready();
+    const script = document.createElement("script");
+    script.src = url;
+    script.onload = ready;
+    script.onerror = () => { this._pages = false; };
+    document.head.appendChild(script);
+  }
+
+  /** Shows the button that opens the router's sections. */
   set routerMenu(value) {
     this._routerMenu = Boolean(value);
     const button = this.shadowRoot.getElementById("router");
@@ -291,9 +305,16 @@ class OpenWrtRouterPanel extends HTMLElement {
       this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })));
     root.getElementById("refresh").addEventListener("click", () => this._refresh());
     root.getElementById("router").hidden = !this._routerMenu;
-    root.getElementById("router").addEventListener("click", () =>
-      this.dispatchEvent(new CustomEvent("openwrt-router-menu", { bubbles: true, composed: true,
-        detail: { nodes: this.data ? Object.values(this.data.nodes) : [] } })));
+    root.getElementById("router").addEventListener("click", () => {
+      const nodes = this.data ? Object.values(this.data.nodes) : [];
+      if (this._pages && window.RouterPages) {
+        const entry = this.net && this.net.entry_id;
+        window.RouterPages.menu(nodes, (node) => window.RouterPages.hassContext(
+          this._hass, entry, nodes.filter((n) => n.online), node, () => this._load(true)));
+        return;
+      }
+      this.dispatchEvent(new CustomEvent("openwrt-router-menu", { bubbles: true, composed: true, detail: { nodes } }));
+    });
     root.getElementById("search").addEventListener("input", (event) => {
       this._query = event.target.value.trim().toLowerCase();
       this._renderClients();

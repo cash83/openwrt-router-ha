@@ -25,6 +25,8 @@ from .const import (
     CONF_SHOW_PANEL,
     CONF_TRACK_ALL,
     DOMAIN,
+    PAGES_FILE,
+    PAGES_STATIC_URL,
     PANEL_COMPONENT,
     PANEL_FILE,
     PANEL_STATIC_URL,
@@ -172,7 +174,10 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_backup)
 
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(PANEL_STATIC_URL, str(Path(__file__).parent / PANEL_FILE), False)]
+        [
+            StaticPathConfig(PANEL_STATIC_URL, str(Path(__file__).parent / PANEL_FILE), False),
+            StaticPathConfig(PAGES_STATIC_URL, str(Path(__file__).parent / PAGES_FILE), False),
+        ]
     )
 
 
@@ -187,6 +192,7 @@ async def _async_sync_panel(hass: HomeAssistant) -> None:
     )
     if wanted and not shared["panel"]:
         version = (Path(__file__).parent / PANEL_FILE).stat().st_mtime_ns
+        pages_version = (Path(__file__).parent / PAGES_FILE).stat().st_mtime_ns
         frontend.async_register_built_in_panel(
             hass,
             component_name="custom",
@@ -199,7 +205,8 @@ async def _async_sync_panel(hass: HomeAssistant) -> None:
                     "embed_iframe": False,
                     "trust_external": False,
                     "module_url": f"{PANEL_STATIC_URL}?v={version}",
-                }
+                },
+                "pages_url": f"{PAGES_STATIC_URL}?v={pages_version}",
             },
             require_admin=True,
         )

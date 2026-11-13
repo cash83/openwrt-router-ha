@@ -1,11 +1,16 @@
-/* Wi-Fi di casa — the router's own sections, drawn by the app.
+/* OpenWrt Router — the router's own sections (status, system, network).
  *
- * Each page reads the router with plain ubus calls through `ctx.rpc`, which
- * app.js routes either straight to the router or through Home Assistant
- * (where only the calls listed in the integration's passthrough.py pass).
- * Everything is written with textContent, never as markup.
+ * One file for two hosts: the Android app and the page in Home Assistant's
+ * sidebar. It keeps to itself: its frame, sheets and styles live in the shadow
+ * root of one element added to the document.
+ *
+ * Each page reads the router with plain ubus calls through `ctx.rpc`. The host
+ * routes them either straight to the router (the app without Home Assistant)
+ * or through Home Assistant, where only the calls listed in the integration's
+ * passthrough.py pass. Everything is written with textContent, never as markup.
  */
 (function () {
+  if (window.RouterPages) return;
   "use strict";
 
   const GROUPS = [
@@ -36,7 +41,140 @@
     ]],
   ];
 
-  const $ = (id) => document.getElementById(id);
+  const STYLE = String.raw`:host{font-family:Roboto,system-ui,sans-serif;font-size:16px;line-height:normal;color:var(--primary-text-color);-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box}
+h2,h3,p{font-family:inherit}
+label{display:block;margin:16px 2px 6px;font-size:13px;font-weight:600;color:var(--secondary-text-color)}
+input,textarea{width:100%;padding:14px;border:1px solid var(--divider-color);border-radius:14px;outline:none;
+  background:var(--card-background-color);color:inherit;font:inherit;font-size:15px}
+textarea{min-height:104px;resize:none;font-family:ui-monospace,monospace;font-size:12.5px}
+input:focus,textarea:focus,select:focus{border-color:var(--primary-color)}
+button{font-family:inherit;cursor:pointer}
+button.main{width:100%;min-height:52px;margin-top:22px;border:0;border-radius:16px;background:var(--primary-color);
+  color:#fff;font:inherit;font-size:16px;font-weight:600}
+button.plain{width:100%;min-height:48px;margin-top:10px;border:1px solid var(--divider-color);border-radius:16px;
+  background:none;color:inherit;font:inherit;font-size:15px}
+button.plain.danger{color:var(--error-color)}
+button.plain.small{width:auto;min-height:38px;margin:0;padding:0 14px;font-size:14px}
+.error{display:none;margin-top:16px;padding:12px 14px;border-radius:14px;font-size:14px;line-height:1.4;
+  background:color-mix(in srgb,var(--error-color) 16%,transparent);color:var(--error-color)}
+.error.show{display:block}
+.scrollx{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.pill{min-height:38px;padding:0 14px;border:1px solid var(--divider-color);border-radius:99px;background:none;color:inherit;font:inherit;font-size:14px;white-space:nowrap}
+.pill.on{border-color:var(--primary-color);color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 18%,transparent)}
+#rmenu{position:fixed;inset:0;z-index:60;display:none;justify-content:flex-end;background:rgba(0,0,0,.55)}
+#rmenu.show{display:flex}
+#rmenu aside{width:min(88vw,360px);height:100%;overflow:auto;padding:14px 16px calc(20px + env(safe-area-inset-bottom));
+  background:var(--card-background-color);box-shadow:-8px 0 30px rgba(0,0,0,.35)}
+#rmenu header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+#rmenu h2{flex:1;margin:0;font-size:20px}
+#rmenu h3{margin:20px 2px 6px;font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--secondary-text-color)}
+#rmenu nav button{display:flex;align-items:center;width:100%;min-height:48px;padding:0 12px;border:0;border-bottom:1px solid var(--divider-color);
+  background:none;color:inherit;font:inherit;font-size:15px;text-align:left}
+#rmenu nav button::after{content:"\203A";margin-left:auto;font-size:22px;color:var(--secondary-text-color)}
+select{width:100%;padding:14px;border:1px solid var(--divider-color);border-radius:14px;outline:none;
+  background:var(--card-background-color);color:inherit;font:inherit;font-size:15px}
+#page{position:fixed;inset:0;z-index:55;display:none;flex-direction:column;background:var(--primary-background-color)}
+#page.show{display:flex}
+#page>header{display:flex;align-items:center;gap:8px;flex:none;height:56px;padding:0 8px;
+  background:var(--app-header-background-color);color:var(--app-header-text-color,#fff)}
+#page>header div{flex:1;min-width:0}
+#page>header b{display:block;font-size:19px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#page>header small{display:block;font-size:12px;opacity:.8}
+.ic{display:inline-grid;place-items:center;width:44px;height:44px;border:0;border-radius:50%;background:none;color:inherit;flex:none}
+.ic:active{background:rgba(255,255,255,.16)}
+.ic.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#pBody{flex:1;overflow:auto;padding:12px 12px calc(28px + env(safe-area-inset-bottom))}
+.pwrap{display:grid;gap:14px;max-width:720px;margin:0 auto}
+.sec{margin:6px 2px -6px;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--secondary-text-color)}
+.pcard{padding:6px 16px;border-radius:18px;background:var(--card-background-color);box-shadow:0 1px 3px rgba(0,0,0,.18);min-width:0}
+.pcard.flat{padding:0;overflow:hidden}
+.pcard label{margin-top:10px}
+.kv{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--divider-color);font-size:14.5px}
+.kv:last-child{border-bottom:0}.kv span{flex:none;color:var(--secondary-text-color)}
+.kv b{min-width:0;font-weight:500;text-align:right;overflow-wrap:anywhere}
+.li{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:8px 0;border:0;border-bottom:1px solid var(--divider-color);
+  background:none;color:inherit;font:inherit;text-align:left}
+.li:last-child{border-bottom:0}
+button.li:active{background:color-mix(in srgb,var(--primary-color) 10%,transparent)}
+.li .who{flex:1;min-width:0}
+.li .who b{display:block;font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li .who small{display:block;margin-top:2px;font-size:12px;color:var(--secondary-text-color);overflow-wrap:anywhere}
+.li .side{display:inline-flex;align-items:center;gap:6px;flex:none;max-width:45%;font-size:12.5px;color:var(--secondary-text-color);text-align:right}
+.li.same .who b{color:var(--warning-color)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--error-color);flex:none}
+.dot.on{background:var(--success-color)}
+.meter{height:6px;margin:0 0 10px;border-radius:9px;background:var(--divider-color);overflow:hidden}
+.meter i{display:block;height:100%;border-radius:9px;background:var(--primary-color)}
+.pbtn{display:block;width:100%;min-height:46px;margin:10px 0;border:0;border-radius:14px;background:var(--primary-color);
+  color:#fff;font:inherit;font-size:15px;font-weight:600}
+.pbtn.ghost{background:none;border:1px solid var(--divider-color);color:var(--primary-color)}
+.pbtn.danger{background:var(--error-color)}.pbtn:disabled{opacity:.55}
+.pnote,.none{margin:0 4px;font-size:12.5px;line-height:1.45;color:var(--secondary-text-color)}
+.none{padding:14px 0}
+p.bad{margin:12px 0;font-size:14px;line-height:1.4;color:var(--error-color)}
+.wait{display:flex;align-items:center;justify-content:center;gap:10px;padding:70px 0;font-size:14px;color:var(--secondary-text-color)}
+.wait i{width:16px;height:16px;border:2px solid var(--divider-color);border-top-color:var(--primary-color);border-radius:50%;animation:spin 1s linear infinite}
+.ll{padding:8px 14px;border-bottom:1px solid var(--divider-color);font-size:12.5px;line-height:1.4;overflow-wrap:anywhere}
+.ll small{display:block;font-size:11px;color:var(--secondary-text-color)}
+.ll.bad{color:var(--error-color)}.ll.warn{color:var(--warning-color)}
+.log .none{padding:14px}
+textarea.code{min-height:190px;margin-top:10px;word-break:normal;white-space:pre;overflow:auto}
+pre.out{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,monospace}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0 4px}
+.duo small{display:block;font-size:12px}.duo b{font-size:20px;font-weight:600}
+.c1{color:var(--primary-color);stroke:var(--primary-color)}.c2{color:var(--success-color);stroke:var(--success-color)}
+.chart svg{display:block;width:100%;height:96px;margin:6px 0}
+.chart polyline{fill:none;stroke-width:1.8;vector-effect:non-scaling-stroke}
+.bars{display:flex;align-items:flex-end;gap:6px;overflow-x:auto;padding:12px 0 6px}
+.bars div{display:grid;justify-items:center;gap:2px;min-width:26px;font-size:11px}
+.bars i{width:16px;border-radius:4px;background:var(--secondary-text-color);opacity:.55}
+.bars .mine i{background:var(--primary-color);opacity:1}.bars .mine b{color:var(--primary-color)}
+.bars small{color:var(--secondary-text-color)}
+.duo2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wait.small{padding:18px 0}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+#ask{position:fixed;inset:0;z-index:70;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.55)}
+#ask.show{display:flex}
+#ask .sheet{width:100%;max-width:520px;max-height:90vh;overflow:auto;padding:10px 18px calc(18px + env(safe-area-inset-bottom));
+  background:var(--card-background-color);border-radius:22px 22px 0 0}
+#ask .grip{width:40px;height:4px;margin:4px auto 14px;border-radius:9px;background:var(--divider-color)}
+#ask h2{margin:0 0 4px;font-size:19px;overflow-wrap:anywhere}
+#ask p{margin:4px 0 2px;font-size:13.5px;line-height:1.45;color:var(--secondary-text-color)}
+#askOk.danger{background:var(--error-color)}
+#toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));z-index:80;display:none;transform:translateX(-50%);
+  max-width:88vw;padding:11px 16px;border-radius:14px;background:#222;color:#fff;font-size:14px;box-shadow:0 8px 28px rgba(0,0,0,.4)}
+#toast.show{display:block}
+`;
+  const FRAME = `<div id="rmenu"><aside>
+  <header><h2>Router</h2><button class="plain small" id="rClose">Chiudi</button></header>
+  <div class="scrollx" id="rNodes"></div>
+  <nav id="rLinks"></nav>
+</aside></div>
+<section id="page">
+  <header>
+    <button class="ic" id="pBack" aria-label="Indietro"><svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg></button>
+    <div><b id="pTitle"></b><small id="pNode"></small></div>
+    <button class="ic" id="pRefresh" aria-label="Aggiorna"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></button>
+  </header>
+  <main id="pBody"></main>
+</section>
+<div id="ask"><div class="sheet">
+  <div class="grip"></div><h2 id="askTitle"></h2><p id="askText"></p>
+  <div id="askBody"></div>
+  <button class="main" id="askOk">Conferma</button>
+  <button class="plain" id="askNo">Annulla</button>
+</div></div>
+<div id="toast"></div>
+`;
+
+  const host = document.createElement("openwrt-router-pages");
+  host.style.cssText = "position:fixed;top:0;left:0;z-index:" + (document.querySelector("home-assistant") ? 1000 : 55);
+  const shadow = host.attachShadow({ mode: "open" });
+  shadow.innerHTML = "<style>" + STYLE + "</style>" + FRAME;
+  document.body.appendChild(host);
+  const $ = (id) => shadow.getElementById(id);
 
   function h(tag, props, ...kids) {
     const el = document.createElement(tag);
@@ -213,6 +351,7 @@
   /** Android's back key: true when something here was closed. */
   function back() {
     if ($("ask").classList.contains("show")) { closeAsk(null); return true; }
+    if ($("rmenu").classList.contains("show")) { $("rmenu").classList.remove("show"); return true; }
     if ($("page").classList.contains("show")) { close(); return true; }
     return false;
   }
@@ -942,5 +1081,57 @@
   $("askNo").addEventListener("click", () => closeAsk(null));
   $("ask").addEventListener("click", (event) => { if (event.target.id === "ask") closeAsk(null); });
 
-  window.RouterPages = { groups: GROUPS, open, close, back, toast };
+  // ---- for a host without a menu of its own (Home Assistant's page)
+
+  /** What a page needs, built on Home Assistant's connection. */
+  function hassContext(hass, entryId, nodes, node, changed) {
+    const call = (message) => hass.callWS(entryId ? { ...message, entry_id: entryId } : message);
+    const rpcOn = (other, object, method, args) =>
+      call({ type: "openwrt_router/ubus", node: other.id, object, method, args: args || {} }).then((reply) => reply.result);
+    return {
+      node, direct: false, user: "root", nodes,
+      rpc: (object, method, args) => rpcOn(node, object, method, args),
+      rpcOn,
+      action: (message) => call(message).then((reply) => { if (changed) changed(); return reply; }),
+      backup: () => call({ type: "openwrt_router/backup", node: node.id }).then((reply) => reply.data),
+      save: (name, data) => {
+        const bytes = Uint8Array.from(atob(data), (ch) => ch.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: "application/gzip" }));
+        const link = h("a", { href: url, download: name });
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 15000);
+        return "i download del browser: " + name;
+      },
+    };
+  }
+
+  let menuNode = null;
+  /** A drawer with the nodes and the sections; `contextFor(node)` gives a page its context. */
+  function menu(nodes, contextFor) {
+    nodes = (nodes || []).filter((node) => node.online);
+    menuNode = nodes.find((node) => menuNode && node.id === menuNode.id) || nodes.find((node) => node.is_main) || nodes[0] || null;
+    const paint = () => {
+      $("rNodes").textContent = "";
+      nodes.forEach((node) => $("rNodes").append(h("button", { class: "pill" + (node === menuNode ? " on" : ""),
+        onclick: () => { menuNode = node; paint(); } }, node.name)));
+      if (!nodes.length) $("rNodes").append("Nessun router raggiungibile in questo momento.");
+      $("rLinks").textContent = "";
+      GROUPS.forEach(([group, pages]) => {
+        $("rLinks").append(h("h3", null, group));
+        pages.forEach(([key, label]) => $("rLinks").append(h("button", { onclick: () => {
+          if (!menuNode) return;
+          $("rmenu").classList.remove("show");
+          open(key, contextFor(menuNode));
+        } }, label)));
+      });
+    };
+    paint();
+    $("rmenu").classList.add("show");
+  }
+  $("rClose").addEventListener("click", () => $("rmenu").classList.remove("show"));
+  $("rmenu").addEventListener("click", (event) => { if (event.target.id === "rmenu") $("rmenu").classList.remove("show"); });
+
+  window.RouterPages = { groups: GROUPS, open, close, back, toast, menu, hassContext };
 })();
