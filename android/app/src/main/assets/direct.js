@@ -349,7 +349,10 @@
           mac: colon(key), name: names[key] || colon(key), named: key in names, ip: addresses[key] || null,
           node_id: station.node_id, node: station.node, ifname: station.ifname, band: station.band,
           connection: LABEL[station.band], signal: station.signal, connected: station.connected,
-          up, down, blocked: blocked.has(key),
+          up, down,
+          used_down: Math.round((station.tx / 1048576) * 10) / 10,
+          used_up: Math.round((station.rx / 1048576) * 10) / 10,
+          blocked: blocked.has(key),
         };
       }
 
@@ -369,7 +372,7 @@
         clients[key] = {
           mac: colon(key), name: names[key] || colon(key), named: key in names, ip: addresses[key] || address,
           node_id: main.id, node: main.name, ifname: null, band: "wired", connection: "Ethernet",
-          signal: null, connected: null, up: 0, down: 0, blocked: blocked.has(key),
+          signal: null, connected: null, up: 0, down: 0, used_down: null, used_up: null, blocked: blocked.has(key),
         };
       }
       for (const key of [...this.bytes.keys()]) if (!best[key]) this.bytes.delete(key);

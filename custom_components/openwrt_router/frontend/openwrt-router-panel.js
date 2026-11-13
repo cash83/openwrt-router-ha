@@ -13,7 +13,8 @@ const TEXT = {
     standard: "Standard", power: "Potenza", hidden: "Rete nascosta", isolate: "Isola i dispositivi",
     settings: "Impostazioni", allNodes: "su tutti i nodi", clients: "Dispositivi collegati",
     search: "Cerca per nome, IP o MAC", all: "Tutti", wired: "Cavo", sortSignal: "Segnale",
-    sortTraffic: "Traffico", sortName: "Nome", sortBy: "Ordina", none: "Nessun dispositivo",
+    sortTraffic: "Traffico", sortUsage: "Consumo", sortName: "Nome",
+    usage: "Dati usati", usageNote: "da quando è collegato a questo nodo", usageTotal: "Consumo dei dispositivi collegati", sortBy: "Ordina", none: "Nessun dispositivo",
     connectedTo: "Collegato a", since: "da", signal: "Segnale", address: "Indirizzo",
     internet: "Accesso a internet", blocked: "Bloccato", kick: "Scollega e fai riagganciare",
     close: "Chiudi", confirm: "Conferma", cancel: "Annulla",
@@ -36,7 +37,8 @@ const TEXT = {
     standard: "Standard", power: "Power", hidden: "Hidden network", isolate: "Isolate devices",
     settings: "Settings", allNodes: "on every node", clients: "Connected devices",
     search: "Search by name, IP or MAC", all: "All", wired: "Cable", sortSignal: "Signal",
-    sortTraffic: "Traffic", sortName: "Name", sortBy: "Sort", none: "No devices",
+    sortTraffic: "Traffic", sortUsage: "Data used", sortName: "Name",
+    usage: "Data used", usageNote: "since it joined this node", usageTotal: "Data used by connected devices", sortBy: "Sort", none: "No devices",
     connectedTo: "Connected to", since: "for", signal: "Signal", address: "Address",
     internet: "Internet access", blocked: "Blocked", kick: "Disconnect and let it rejoin",
     close: "Close", confirm: "Confirm", cancel: "Cancel",
@@ -193,7 +195,7 @@ input[type=search]:focus{border-color:var(--accent)}
 .grip{width:40px;height:4px;margin:6px auto 12px;border-radius:9px;background:var(--line)}
 .sheet h3{margin:0 0 2px;font-size:19px}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:16px 0;font-size:14px}
-.kv dt{color:var(--soft)}.kv dd{margin:0;text-align:right;word-break:break-all}
+.kv dt{color:var(--soft)}.kv dt small{font-size:11.5px}.kv dd{margin:0;text-align:right;word-break:break-all}
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:48px;margin-top:10px;border:0;border-radius:14px;
   background:var(--accent);color:#fff;font:inherit;font-size:15px;font-weight:500;cursor:pointer}
 .btn.ghost{background:none;border:1px solid var(--line);color:inherit}
@@ -334,6 +336,8 @@ class OpenWrtRouterPanel extends HTMLElement {
     const t = this.t, { network, totals, nodes, main } = this.data;
     const up = network.wan_up;
     const top = (entry, key) => entry && entry[key] > 0.05 ? `${esc(entry.name)} · ${rate(entry[key])}` : "—";
+    const used = Object.values(this.data.clients).reduce(
+      (sum, c) => ({ down: sum.down + (c.used_down || 0), up: sum.up + (c.used_up || 0) }), { down: 0, up: 0 });
     this.shadowRoot.getElementById("hero").innerHTML = `
       <div class="state"><span class="dot ${up ? "" : "off"}"></span>${esc(up ? t.online : t.offline)}
         <span class="ip">${esc(t.publicIp)}<br><b>${esc(network.public_ip || "—")}</b></span></div>
@@ -345,6 +349,7 @@ class OpenWrtRouterPanel extends HTMLElement {
       <div class="facts">
         <span>${esc(t.topDown)}: <b>${top(totals.top_down, "down")}</b></span>
         <span>${esc(t.topUp)}: <b>${top(totals.top_up, "up")}</b></span>
+        <span>${esc(t.usageTotal)}: <b>↓ ${size(used.down)} · ↑ ${size(used.up)}</b></span>
         <span>${esc(t.total)}: <b>${size(network.download_mb)}</b></span>
         <span>${esc(t.totalUp)}: <b>${size(network.upload_mb)}</b></span>
         <span>${esc(t.up)}: <b>${esc(duration(nodes[main].uptime, t))}</b></span>
@@ -425,7 +430,7 @@ class OpenWrtRouterPanel extends HTMLElement {
       .concat(Object.values(nodes).map((node) => [`node:${node.id}`, `${node.name} ${node.clients ?? 0}`]))
       .concat([["band:2g", `2,4 GHz ${totals.wifi_2g}`], ["band:5g", `5 GHz ${totals.wifi_5g}`]])
       .concat(totals.wired ? [["band:wired", `${t.wired} ${totals.wired}`]] : []);
-    const sorts = [["signal", t.sortSignal], ["traffic", t.sortTraffic], ["name", t.sortName]];
+    const sorts = [["signal", t.sortSignal], ["traffic", t.sortTraffic], ["usage", t.sortUsage], ["name", t.sortName]];
     this.shadowRoot.getElementById("filters").innerHTML =
       chips.map(([id, label]) => `<button class="chip ${this._filter === id ? "on" : ""}" data-filter="${esc(id)}">${esc(label)}</button>`).join("") +
       `<span class="chip static">${esc(t.sortBy)}:</span>` +
@@ -444,6 +449,7 @@ class OpenWrtRouterPanel extends HTMLElement {
     const by = {
       signal: (a, b) => (a.signal ?? 1) - (b.signal ?? 1),
       traffic: (a, b) => b.down + b.up - (a.down + a.up),
+      usage: (a, b) => (b.used_down || 0) + (b.used_up || 0) - ((a.used_down || 0) + (a.used_up || 0)),
       name: (a, b) => a.name.localeCompare(b.name),
     }[this._sort];
     list.sort(by);
@@ -452,7 +458,9 @@ class OpenWrtRouterPanel extends HTMLElement {
       <button class="row ${c.blocked ? "blocked" : ""}" data-client="${esc(c.mac)}">
         ${c.band === "wired" ? `<span class="bars">${svg("cable", 18)}</span>` : bars(c.signal)}
         <span class="who"><b>${esc(c.name)}</b><span>${esc(c.node)} · ${esc(c.band === "wired" ? t.wired : c.connection)}${c.signal == null ? "" : ` · ${c.signal} dBm`}${c.ip ? ` · ${esc(c.ip)}` : ""}</span></span>
-        <span class="flow"><b>↓ ${esc(rate(c.down))}</b>↑ ${esc(rate(c.up))}</span>
+        <span class="flow">${this._sort === "usage" && c.used_down != null
+          ? `<b>↓ ${esc(size(c.used_down))}</b>↑ ${esc(size(c.used_up))}`
+          : `<b>↓ ${esc(rate(c.down))}</b>↑ ${esc(rate(c.up))}`}</span>
       </button>`).join("") : `<div class="empty">${esc(t.none)}</div>`;
   }
 
@@ -467,6 +475,7 @@ class OpenWrtRouterPanel extends HTMLElement {
         <dt>${esc(t.address)}</dt><dd>${esc(c.ip || "—")}</dd><dt>MAC</dt><dd>${esc(c.mac)}</dd>
         ${c.connected == null ? "" : `<dt>${esc(t.connectedTo)} ${esc(c.node)} ${esc(t.since)}</dt><dd>${esc(duration(c.connected, t))}</dd>`}
         <dt>${esc(t.download)}</dt><dd>${esc(rate(c.down))}</dd><dt>${esc(t.upload)}</dt><dd>${esc(rate(c.up))}</dd>
+        ${c.used_down == null ? "" : `<dt>${esc(t.usage)}<br><small>${esc(t.usageNote)}</small></dt><dd>↓ ${esc(size(c.used_down))} · ↑ ${esc(size(c.used_up))}</dd>`}
       </dl>
       <div class="field"><label>${esc(t.internet)}${c.blocked ? `<small>${esc(t.blocked)}</small>` : ""}</label>
         <button class="toggle ${c.blocked ? "" : "on"}" data-do="block" data-mac="${esc(c.mac)}" data-value="${c.blocked ? "" : "1"}" aria-pressed="${!c.blocked}"></button></div>

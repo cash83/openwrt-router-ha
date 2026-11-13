@@ -9,8 +9,8 @@ android {
         applicationId 'it.casa.wifi'
         minSdk 26
         targetSdk 35
-        versionCode 9
-        versionName '0.4.5'
+        versionCode 10
+        versionName '0.5.0'
     }
 
     // The page the app shows is the very file Home Assistant serves in its

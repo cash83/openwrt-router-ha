@@ -535,6 +535,10 @@ class OpenWrtApi:
                 "connected": station["connected"],
                 "up": up,
                 "down": down,
+                # Megabytes since the client joined this access point: the
+                # counters start again whenever it reconnects or changes node.
+                "used_down": round(station["tx"] / 1048576, 1),
+                "used_up": round(station["rx"] / 1048576, 1),
                 "blocked": key in blocked,
             }
 
@@ -569,6 +573,8 @@ class OpenWrtApi:
                 "connected": None,
                 "up": 0.0,
                 "down": 0.0,
+                "used_down": None,
+                "used_up": None,
                 "blocked": key in blocked,
             }
         for gone in set(self._bytes) - set(best):

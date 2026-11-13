@@ -177,6 +177,8 @@ def test_snapshot_describes_nodes_clients_and_network(router: Fake) -> None:
     assert (phone["name"], phone["ip"], phone["node"]) == ("phone", "192.168.50.20", "Salotto")
     assert (phone["band"], phone["signal"], phone["ifname"]) == ("2g", -50, "phy0-ap0")
     assert phone["blocked"] is False
+    assert (phone["used_down"], phone["used_up"]) == (1.9, 1.0)
+    assert clients["aabbcc000009"]["used_down"] is None
     assert clients["aabbcc000002"]["blocked"] is True
     assert clients["aabbcc000002"]["name"] == "AA:BB:CC:00:00:02"
     assert clients["aabbcc000009"]["band"] == "wired"

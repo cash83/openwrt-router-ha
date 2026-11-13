@@ -269,4 +269,5 @@ class ClientNodeSensor(ClientEntity, SensorEntity):
             return None
         return {"connection": client["connection"], "ip": client["ip"],
                 "download_mbit": client["down"], "upload_mbit": client["up"],
+                "downloaded_mb": client["used_down"], "uploaded_mb": client["used_up"],
                 "connected_seconds": client["connected"]}
