@@ -1,0 +1,217 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "OpenWrt router",
+        "description": "Address and login of the main router. Other OpenWrt access points of the same network are found on their own and use the same login.",
+        "data": {
+          "host": "Address",
+          "username": "User name",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Log in to the router again",
+        "description": "The router refused the saved login.",
+        "data": {
+          "username": "User name",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The router did not answer at that address.",
+      "invalid_auth": "Wrong user name or password."
+    },
+    "abort": {
+      "already_configured": "This router is already set up.",
+      "reauth_successful": "Login updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "OpenWrt network options",
+        "data": {
+          "scan_interval": "Seconds between two readings",
+          "show_panel": "Show the Wi-Fi page in the sidebar",
+          "track_all_clients": "Create a device for every client",
+          "tracked_clients": "Clients to follow"
+        },
+        "data_description": {
+          "tracked_clients": "Each one gets a presence tracker, its signal, the node it is on and an internet access switch."
+        }
+      }
+    }
+  },
+  "services": {
+    "kick_client": {
+      "name": "Disconnect a client",
+      "description": "Disconnects a Wi-Fi client so that it joins the access point it hears best.",
+      "fields": {
+        "mac": {
+          "name": "Hardware address",
+          "description": "Address of the client."
+        },
+        "ban_seconds": {
+          "name": "Keep away for",
+          "description": "Seconds during which the node it was on refuses it."
+        },
+        "entry_id": {
+          "name": "Network",
+          "description": "Only needed with more than one OpenWrt network."
+        }
+      }
+    },
+    "block_client": {
+      "name": "Block internet for a client",
+      "description": "Adds or removes a firewall rule that keeps a client off the internet.",
+      "fields": {
+        "mac": {
+          "name": "Hardware address",
+          "description": "Address of the client."
+        },
+        "blocked": {
+          "name": "Blocked",
+          "description": "On to block, off to allow again."
+        },
+        "entry_id": {
+          "name": "Network",
+          "description": "Only needed with more than one OpenWrt network."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "public_ip": {
+        "name": "Public IP"
+      },
+      "wan_ip": {
+        "name": "WAN IP"
+      },
+      "gateway": {
+        "name": "Gateway"
+      },
+      "dns": {
+        "name": "DNS servers"
+      },
+      "wan_uptime": {
+        "name": "Internet connected for"
+      },
+      "download_total": {
+        "name": "Downloaded"
+      },
+      "upload_total": {
+        "name": "Uploaded"
+      },
+      "download_speed": {
+        "name": "Download speed"
+      },
+      "upload_speed": {
+        "name": "Upload speed"
+      },
+      "top_downloader": {
+        "name": "Top downloader"
+      },
+      "top_uploader": {
+        "name": "Top uploader"
+      },
+      "network_clients": {
+        "name": "Devices on the network"
+      },
+      "wired_clients": {
+        "name": "Wired devices"
+      },
+      "dhcp_range": {
+        "name": "DHCP range"
+      },
+      "clients": {
+        "name": "Devices"
+      },
+      "clients_2g": {
+        "name": "Devices on 2.4 GHz"
+      },
+      "clients_5g": {
+        "name": "Devices on 5 GHz"
+      },
+      "cpu": {
+        "name": "Processor load"
+      },
+      "ram": {
+        "name": "Memory in use"
+      },
+      "uptime": {
+        "name": "Running for"
+      },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "backhaul": {
+        "name": "Link to the network"
+      },
+      "mesh_signal": {
+        "name": "Mesh link signal"
+      },
+      "mesh_tx_rate": {
+        "name": "Mesh link send rate"
+      },
+      "mesh_rx_rate": {
+        "name": "Mesh link receive rate"
+      },
+      "radio_channel": {
+        "name": "Wi-Fi {band} current channel"
+      },
+      "client_signal": {
+        "name": "Signal"
+      },
+      "client_node": {
+        "name": "Connected to"
+      }
+    },
+    "binary_sensor": {
+      "internet": {
+        "name": "Internet"
+      },
+      "node_online": {
+        "name": "Reachable"
+      }
+    },
+    "switch": {
+      "leds": {
+        "name": "Lights"
+      },
+      "wifi_enabled": {
+        "name": "Wi-Fi {band}"
+      },
+      "wifi_hidden": {
+        "name": "Wi-Fi {band} hidden network"
+      },
+      "wifi_isolate": {
+        "name": "Wi-Fi {band} isolate devices"
+      },
+      "client_internet": {
+        "name": "Internet access"
+      }
+    },
+    "select": {
+      "wifi_mode": {
+        "name": "Wi-Fi {band} standard"
+      },
+      "wifi_width": {
+        "name": "Wi-Fi {band} channel width"
+      },
+      "wifi_tx_power": {
+        "name": "Wi-Fi {band} transmit power"
+      },
+      "wifi_channel": {
+        "name": "Wi-Fi {band} channel"
+      }
+    },
+    "button": {
+      "restart_radio": {
+        "name": "Restart Wi-Fi {band} radio"
+      }
+    }
+  }
+}

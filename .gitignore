@@ -1,0 +1,4 @@
+__pycache__/
+.pytest_cache/
+preview/snapshot.json
+*.pyc

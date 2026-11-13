@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anteprima pannello OpenWrt</title>
+<style>html,body{margin:0}body{--primary-background-color:#111318;--card-background-color:#1c1f26;--primary-text-color:#e6e8ee;--secondary-text-color:#9aa0ad;--divider-color:rgba(255,255,255,.12);--primary-color:#3b9eff;--app-header-background-color:#171a21}
+body.light{--primary-background-color:#f3f5f8;--card-background-color:#fff;--primary-text-color:#1b1e24;--secondary-text-color:#6b7280;--divider-color:rgba(0,0,0,.12);--primary-color:#0b74de;--app-header-background-color:#0b74de}</style>
+</head><body>
+<script type="module">
+import "../custom_components/openwrt_router/frontend/openwrt-router-panel.js";
+const snapshot = await (await fetch("snapshot.json")).json();
+if (location.hash === "#light") document.body.classList.add("light");
+window.calls = [];
+const panel = document.createElement("openwrt-router-panel");
+panel.narrow = true;
+panel.hass = { language: "it", callWS: async (message) => { window.calls.push(message); if (message.type.endsWith("/snapshot")) return snapshot; await new Promise((r) => setTimeout(r, 400)); return { ok: true }; } };
+document.body.appendChild(panel);
+</script></body></html>

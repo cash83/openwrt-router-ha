@@ -1,0 +1,217 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Router OpenWrt",
+        "description": "Indirizzo e accesso del router principale. Gli altri access point OpenWrt della stessa rete vengono trovati da soli e usano lo stesso accesso.",
+        "data": {
+          "host": "Indirizzo",
+          "username": "Utente",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Accedi di nuovo al router",
+        "description": "Il router ha rifiutato l'accesso salvato.",
+        "data": {
+          "username": "Utente",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Il router non risponde a quell'indirizzo.",
+      "invalid_auth": "Utente o password errati."
+    },
+    "abort": {
+      "already_configured": "Questo router è già configurato.",
+      "reauth_successful": "Accesso aggiornato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni della rete OpenWrt",
+        "data": {
+          "scan_interval": "Secondi tra due letture",
+          "show_panel": "Mostra la pagina Wi-Fi nel menu",
+          "track_all_clients": "Crea un dispositivo per ogni client",
+          "tracked_clients": "Client da seguire"
+        },
+        "data_description": {
+          "tracked_clients": "Ognuno riceve un rilevatore di presenza, il segnale, il nodo a cui è agganciato e un interruttore per l'accesso a internet."
+        }
+      }
+    }
+  },
+  "services": {
+    "kick_client": {
+      "name": "Scollega un client",
+      "description": "Scollega un client Wi-Fi, che si riaggancia all'access point che sente meglio.",
+      "fields": {
+        "mac": {
+          "name": "Indirizzo MAC",
+          "description": "Indirizzo del client."
+        },
+        "ban_seconds": {
+          "name": "Tieni lontano per",
+          "description": "Secondi durante i quali il nodo su cui era lo rifiuta."
+        },
+        "entry_id": {
+          "name": "Rete",
+          "description": "Serve solo con più di una rete OpenWrt."
+        }
+      }
+    },
+    "block_client": {
+      "name": "Blocca internet a un client",
+      "description": "Aggiunge o toglie una regola del firewall che tiene un client fuori da internet.",
+      "fields": {
+        "mac": {
+          "name": "Indirizzo MAC",
+          "description": "Indirizzo del client."
+        },
+        "blocked": {
+          "name": "Bloccato",
+          "description": "Acceso per bloccare, spento per riammettere."
+        },
+        "entry_id": {
+          "name": "Rete",
+          "description": "Serve solo con più di una rete OpenWrt."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "public_ip": {
+        "name": "IP pubblico"
+      },
+      "wan_ip": {
+        "name": "IP WAN"
+      },
+      "gateway": {
+        "name": "Gateway"
+      },
+      "dns": {
+        "name": "Server DNS"
+      },
+      "wan_uptime": {
+        "name": "Internet collegato da"
+      },
+      "download_total": {
+        "name": "Scaricati"
+      },
+      "upload_total": {
+        "name": "Caricati"
+      },
+      "download_speed": {
+        "name": "Velocità download"
+      },
+      "upload_speed": {
+        "name": "Velocità upload"
+      },
+      "top_downloader": {
+        "name": "Chi scarica di più"
+      },
+      "top_uploader": {
+        "name": "Chi carica di più"
+      },
+      "network_clients": {
+        "name": "Dispositivi in rete"
+      },
+      "wired_clients": {
+        "name": "Dispositivi via cavo"
+      },
+      "dhcp_range": {
+        "name": "Intervallo DHCP"
+      },
+      "clients": {
+        "name": "Dispositivi"
+      },
+      "clients_2g": {
+        "name": "Dispositivi a 2,4 GHz"
+      },
+      "clients_5g": {
+        "name": "Dispositivi a 5 GHz"
+      },
+      "cpu": {
+        "name": "Carico processore"
+      },
+      "ram": {
+        "name": "Memoria usata"
+      },
+      "uptime": {
+        "name": "Acceso da"
+      },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "backhaul": {
+        "name": "Collegamento alla rete"
+      },
+      "mesh_signal": {
+        "name": "Segnale collegamento mesh"
+      },
+      "mesh_tx_rate": {
+        "name": "Velocità invio mesh"
+      },
+      "mesh_rx_rate": {
+        "name": "Velocità ricezione mesh"
+      },
+      "radio_channel": {
+        "name": "Canale attuale Wi-Fi {band}"
+      },
+      "client_signal": {
+        "name": "Segnale"
+      },
+      "client_node": {
+        "name": "Collegato a"
+      }
+    },
+    "binary_sensor": {
+      "internet": {
+        "name": "Internet"
+      },
+      "node_online": {
+        "name": "Raggiungibile"
+      }
+    },
+    "switch": {
+      "leds": {
+        "name": "Luci"
+      },
+      "wifi_enabled": {
+        "name": "Wi-Fi {band}"
+      },
+      "wifi_hidden": {
+        "name": "Wi-Fi {band} rete nascosta"
+      },
+      "wifi_isolate": {
+        "name": "Wi-Fi {band} isola i dispositivi"
+      },
+      "client_internet": {
+        "name": "Accesso a internet"
+      }
+    },
+    "select": {
+      "wifi_mode": {
+        "name": "Wi-Fi {band} standard"
+      },
+      "wifi_width": {
+        "name": "Wi-Fi {band} larghezza canale"
+      },
+      "wifi_tx_power": {
+        "name": "Wi-Fi {band} potenza"
+      },
+      "wifi_channel": {
+        "name": "Wi-Fi {band} canale"
+      }
+    },
+    "button": {
+      "restart_radio": {
+        "name": "Riavvia radio Wi-Fi {band}"
+      }
+    }
+  }
+}
