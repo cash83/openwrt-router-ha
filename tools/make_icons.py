@@ -82,8 +82,11 @@ def tile(size: int) -> Image.Image:
 def main() -> None:
     brand = ROOT / "custom_components" / "openwrt_router" / "brand"
     brand.mkdir(exist_ok=True)
-    for name, size in (("icon.png", 256), ("icon@2x.png", 512), ("logo.png", 256), ("logo@2x.png", 512)):
-        tile(size).save(brand / name)
+    # The tile is dark by design and reads well on both themes, so the dark
+    # variants Home Assistant asks for on a dark theme are the same picture.
+    for prefix in ("", "dark_"):
+        for name, size in (("icon.png", 256), ("icon@2x.png", 512), ("logo.png", 256), ("logo@2x.png", 512)):
+            tile(size).save(brand / (prefix + name))
     tile(512).save(ROOT / "icon.png")
     (ROOT / "android" / "store").mkdir(exist_ok=True)
     tile(512).save(ROOT / "android" / "store" / "icona-512.png")
