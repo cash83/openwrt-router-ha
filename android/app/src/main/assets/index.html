@@ -112,6 +112,11 @@ ol{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5;color:var(--s
     <input id="rPass" type="password" placeholder="Password del router" autocomplete="off">
   </div>
 
+  <div class="switchrow">
+    <div><b>Ricorda l'accesso</b><small id="rememberState">Alla prossima apertura l'app si collega da sola.</small></div>
+    <button class="toggle on" id="remember" role="switch" aria-checked="true" aria-label="Ricorda l'accesso"></button>
+  </div>
+
   <div class="error" id="error"></div>
   <button class="main" id="connect">Accedi con Home Assistant</button>
 </section>

@@ -50,6 +50,9 @@
 				],
 				"/sbin/ip -4 neigh show": [
 					"exec"
+				],
+				"/bin/uclient-fetch -q -T 5 -O - https://api.ipify.org": [
+					"exec"
 				]
 			}
 		},

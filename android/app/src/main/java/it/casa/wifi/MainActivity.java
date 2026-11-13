@@ -69,6 +69,14 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new Client());
         web.addJavascriptInterface(new Bridge(), "Android");
         setContentView(web);
+        // "Remember this phone" switched off: what was saved lasts until the app
+        // is closed, so a fresh start begins from the sign-in screen.
+        if (savedInstanceState == null && !prefs().getBoolean("remember", true)) {
+            prefs().edit().clear().apply();
+        }
+        // Set before loading: the page reads its saved connection as its first
+        // act, and that can happen before onPageStarted is delivered.
+        ownPage = true;
         web.loadUrl(APP_PAGE);
     }
 
@@ -93,6 +101,7 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (!ownPage) {
+            ownPage = true;
             web.loadUrl(APP_PAGE);
             return;
         }
@@ -126,6 +135,12 @@ public class MainActivity extends Activity {
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             ownPage = url != null && url.startsWith("file:///android_asset/");
+        }
+
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            // The app only ever shows its own bundled page.
+            return !request.getUrl().toString().startsWith("file:///android_asset/");
         }
     }
 
@@ -215,6 +230,7 @@ public class MainActivity extends Activity {
             try {
                 SharedPreferences prefs = prefs();
                 out.put("mode", prefs.getString("mode", ""));
+                out.put("remember", prefs.getBoolean("remember", true));
                 out.put("home", prefs.getString("home", ""));
                 out.put("remote", prefs.getString("remote", ""));
                 out.put("signedIn", !prefs.getString("refresh", "").isEmpty());
@@ -377,6 +393,13 @@ public class MainActivity extends Activity {
                 return decrypt(prefs().getString("routerPassword", ""));
             } catch (Exception error) {
                 return "";
+            }
+        }
+
+        @JavascriptInterface
+        public void setRemember(boolean remember) {
+            if (ownPage) {
+                prefs().edit().putBoolean("remember", remember).apply();
             }
         }
 

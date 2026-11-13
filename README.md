@@ -59,6 +59,6 @@ reach the network in two ways, chosen on its first screen:
   the home address does not answer.
 - **Router only**: address, user and password of the OpenWrt router; the app talks to
   it directly (`assets/direct.js` mirrors `api.py`). Works on the home network or
-  through a VPN. The public IP is shown only when the router itself has one.
+  through a VPN. The public IP is asked by the router itself (needs the rights file).
 
 Build (JDK 17, Gradle 8.7, Android SDK 35): `gradle assembleDebug` in `android`.

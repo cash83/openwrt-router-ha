@@ -247,6 +247,18 @@
       }, stations];
     }
 
+    /** The address the internet sees. Behind another modem only the router can find out. */
+    async publicIp(wanIp) {
+      if (isPublic(wanIp)) return wanIp;
+      if (this.publicAt && Date.now() - this.publicAt < 900000) return this.publicValue;
+      const reply = (await this.call("file", "exec", {
+        command: "/bin/uclient-fetch", params: ["-q", "-T", "5", "-O", "-", "https://api.ipify.org"],
+      })) || {};
+      const found = String(reply.stdout || "").trim();
+      if (isPublic(found)) { this.publicValue = found; this.publicAt = Date.now(); }
+      return this.publicValue || null;
+    }
+
     speed(key, rx, tx, now) {
       const previous = this.bytes.get(key);
       this.bytes.set(key, [rx, tx, now]);
@@ -397,7 +409,7 @@
         network: {
           wan_up: Boolean(wan.up), wan_protocol: String(wan.proto || "").toUpperCase() || null,
           wan_uptime: wan.up ? wan.uptime : 0, wan_ip: wanAddress.address || null,
-          public_ip: isPublic(wanAddress.address) ? wanAddress.address : null,
+          public_ip: await this.publicIp(wanAddress.address),
           gateway: ((wan.route || []).find((r) => r.target === "0.0.0.0") || {}).nexthop || null,
           dns: wan["dns-server"] || [],
           download_mb: Math.round(((statistics.rx_bytes || 0) / megabyte) * 100) / 100,

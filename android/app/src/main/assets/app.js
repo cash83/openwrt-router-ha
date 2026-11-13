@@ -33,6 +33,7 @@
   let paused = false;
   let remoteNote = "";
   let mfaFlow = "";
+  let remember = true;
 
   // Whether the outside address is looked up from Home Assistant (Nabu Casa)
   // or typed by hand. Kept with the page, it holds nothing secret.
@@ -50,6 +51,7 @@
   function readConfig() {
     try { config = JSON.parse(native.getConfig()) || {}; } catch (error) { config = {}; }
     mode = config.mode === "router" ? "router" : "ha";
+    remember = config.remember !== false;
     return mode === "router"
       ? Boolean(config.routerSaved && config.routerHost)
       : Boolean(config.signedIn && (config.home || config.remote));
@@ -276,6 +278,11 @@
     $("paneHa").hidden = viaRouter;
     $("paneRouter").hidden = !viaRouter;
     $("connect").textContent = viaRouter ? "Collega al router" : mfaFlow ? "Conferma il codice" : "Accedi";
+    $("remember").classList.toggle("on", remember);
+    $("remember").setAttribute("aria-checked", String(remember));
+    $("rememberState").textContent = remember
+      ? "Alla prossima apertura l'app si collega da sola. La password è salvata cifrata sul telefono."
+      : "Spento: alla prossima apertura l'app chiede di nuovo l'accesso.";
     const on = auto.on;
     $("auto").classList.toggle("on", on);
     $("auto").setAttribute("aria-checked", String(on));
@@ -330,6 +337,7 @@
   async function submit() {
     const button = $("connect");
     button.disabled = true;
+    native.setRemember(remember);
     try {
       if (mode === "router") {
         const host = clean($("rHost").value);
@@ -408,6 +416,7 @@
   $("tabHa").addEventListener("click", () => { mode = "ha"; paint(); });
   $("tabRouter").addEventListener("click", () => { mode = "router"; paint(); });
   $("auto").addEventListener("click", () => { auto.on = !auto.on; paint(); });
+  $("remember").addEventListener("click", () => { remember = !remember; paint(); });
   $("mClose").addEventListener("click", closeMenu);
   $("menu").addEventListener("click", (event) => { if (event.target.id === "menu") closeMenu(); });
   $("mEdit").addEventListener("click", () => { closeMenu(); showSetup(""); });
