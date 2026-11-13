@@ -329,6 +329,8 @@
       panel = document.createElement("openwrt-router-panel");
       panel.narrow = true;
       panel.addEventListener("hass-toggle-menu", openMenu);
+      panel.addEventListener("openwrt-router-menu", (event) => openDrawer(event.detail.nodes));
+      panel.routerMenu = true;
       $("app").appendChild(panel);
     }
     panel.hass = hass;
@@ -413,6 +415,83 @@
 
   const closeMenu = () => $("menu").classList.remove("show");
 
+  // ---- the router's own pages, the way its web interface groups them
+
+  const ROUTER_PAGES = [
+    ["Stato", [
+      ["Panoramica", "admin/status/overview"],
+      ["Grafici in tempo reale", "admin/status/realtime"],
+      ["Registro di sistema", "admin/status/logs"],
+      ["Analisi dei canali", "admin/status/channel_analysis"],
+      ["Processi", "admin/status/processes"],
+      ["Instradamento", "admin/status/routes"],
+      ["Firewall", "admin/status/nftables"],
+    ]],
+    ["Sistema", [
+      ["Sistema", "admin/system/system"],
+      ["Amministrazione", "admin/system/admin"],
+      ["Software", "admin/system/package-manager"],
+      ["Avvio", "admin/system/startup"],
+      ["Operazioni pianificate", "admin/system/crontab"],
+      ["Configurazione LED", "admin/system/leds"],
+      ["Backup e aggiornamento firmware", "admin/system/flash"],
+      ["Aggiornamento assistito", "admin/system/attendedsysupgrade"],
+      ["Riavvia", "admin/system/reboot"],
+    ]],
+    ["Rete", [
+      ["Interfacce", "admin/network/network"],
+      ["Wireless", "admin/network/wireless"],
+      ["DHCP e DNS", "admin/network/dhcp"],
+      ["Firewall", "admin/network/firewall"],
+      ["Instradamento", "admin/network/routes"],
+      ["Diagnostica", "admin/network/diagnostics"],
+      ["Usteer", "admin/network/usteer"],
+    ]],
+  ];
+  let drawerNodes = [];
+  let drawerNode = null;
+
+  function paintDrawer() {
+    const nodes = $("dNodes");
+    nodes.textContent = "";
+    drawerNodes.forEach((node) => {
+      const pill = document.createElement("button");
+      pill.className = "pill" + (node === drawerNode ? " on" : "");
+      pill.textContent = node.name;
+      pill.addEventListener("click", () => { drawerNode = node; paintDrawer(); });
+      nodes.appendChild(pill);
+    });
+    $("dNote").textContent = mode === "router"
+      ? "Si aprono le pagine del router, con l'accesso già fatto."
+      : "Si aprono le pagine del router: serve essere sul Wi-Fi di casa o con una VPN, e la password del router.";
+    const links = $("dLinks");
+    links.textContent = "";
+    ROUTER_PAGES.forEach(([group, pages]) => {
+      const title = document.createElement("h3");
+      title.textContent = group;
+      links.appendChild(title);
+      pages.forEach(([label, path]) => {
+        const button = document.createElement("button");
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          if (!drawerNode) return;
+          closeDrawer();
+          native.openRouter("http://" + drawerNode.host + "/cgi-bin/luci/" + path, drawerNode.name + " · " + label);
+        });
+        links.appendChild(button);
+      });
+    });
+  }
+
+  function openDrawer(nodes) {
+    drawerNodes = (nodes || []).filter((node) => node.online);
+    drawerNode = drawerNodes.find((node) => drawerNode && node.id === drawerNode.id) || drawerNodes[0] || null;
+    paintDrawer();
+    $("drawer").classList.add("show");
+  }
+
+  const closeDrawer = () => $("drawer").classList.remove("show");
+
   $("connect").addEventListener("click", submit);
   $("tabHa").addEventListener("click", () => { mode = "ha"; paint(); });
   $("tabRouter").addEventListener("click", () => { mode = "router"; paint(); });
@@ -435,6 +514,8 @@
     });
   }
   $("mClose").addEventListener("click", closeMenu);
+  $("dClose").addEventListener("click", closeDrawer);
+  $("drawer").addEventListener("click", (event) => { if (event.target.id === "drawer") closeDrawer(); });
   $("menu").addEventListener("click", (event) => { if (event.target.id === "menu") closeMenu(); });
   $("mEdit").addEventListener("click", () => { closeMenu(); showSetup(""); });
   $("mForget").addEventListener("click", () => {
@@ -448,6 +529,7 @@
 
   // Hooks the Android side calls.
   window.appBack = () => {
+    if ($("drawer").classList.contains("show")) { closeDrawer(); return true; }
     if ($("menu").classList.contains("show")) { closeMenu(); return true; }
     const root = panel && panel.shadowRoot;
     const veil = root && root.getElementById("veil");

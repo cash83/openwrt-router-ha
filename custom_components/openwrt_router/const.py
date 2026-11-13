@@ -7,6 +7,9 @@ DOMAIN = "openwrt_router"
 CONF_TRACKED = "tracked_clients"
 CONF_TRACK_ALL = "track_all_clients"
 CONF_SHOW_PANEL = "show_panel"
+CONF_NOTIFY = "notify_service"
+
+EVENT_NEW_DEVICE = "openwrt_router_new_device"
 
 DEFAULT_SCAN_INTERVAL = 30
 MIN_SCAN_INTERVAL = 10

@@ -21,6 +21,11 @@ through `usteer` and use the same login.
   between nodes, which each node chooses for itself.
 - **Clients you choose to follow**: presence, signal, the node they are on, and a switch
   that cuts their internet access.
+- **New devices**: a client never seen before is marked "new" for a day, the event
+  `openwrt_router_new_device` is fired, and a notify service can be named in the options
+  to get a notification on the phone.
+- **Data used** by each device since it joined its node (the counters restart when it
+  reconnects or changes node).
 - **Services** `openwrt_router.kick_client` and `openwrt_router.block_client`.
 - **A page in the sidebar** ("Wi-Fi") designed for a phone: state of the network, the
   nodes, the Wi-Fi settings and the list of devices with quick actions. It loads nothing
@@ -71,5 +76,9 @@ reach the network in two ways, chosen on its first screen:
 The ready-made APK is attached to each [release](https://github.com/cash83/openwrt-router-ha/releases).
 It is signed with a development key, so Android asks to allow installation from the
 browser or file manager you open it with.
+
+The sliders button at the top right lists the router's own pages (status, system,
+network) and opens them inside the app; in router-only mode the saved login is typed in
+for you.
 
 Build it yourself (JDK 17, Gradle 8.7, Android SDK 35): `gradle assembleDebug` in `android`.

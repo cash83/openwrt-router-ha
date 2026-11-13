@@ -35,10 +35,12 @@
         "data": {
           "scan_interval": "Secondi tra due letture",
           "show_panel": "Mostra la pagina Wi-Fi nel menu",
+          "notify_service": "Avvisa quando si collega un dispositivo nuovo",
           "track_all_clients": "Crea un dispositivo per ogni client",
           "tracked_clients": "Client da seguire"
         },
         "data_description": {
+          "notify_service": "Nome di un servizio di notifica, per esempio notify.mobile_app_mio_telefono. Lascia vuoto per non ricevere notifiche; l'evento openwrt_router_new_device viene emesso comunque.",
           "tracked_clients": "Ognuno riceve un rilevatore di presenza, il segnale, il nodo a cui è agganciato e un interruttore per l'accesso a internet."
         }
       }

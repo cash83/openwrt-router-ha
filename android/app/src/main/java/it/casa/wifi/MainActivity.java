@@ -8,11 +8,18 @@ import android.os.Bundle;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import org.json.JSONObject;
 
@@ -49,6 +56,13 @@ public class MainActivity extends Activity {
     private static final int TIMEOUT_MS = 7000;
 
     private WebView web;
+    private FrameLayout root;
+    // The router's own web interface, shown over the app when asked for.
+    private LinearLayout routerLayer;
+    private WebView luci;
+    private TextView routerTitle;
+    private String routerHost;
+    private boolean loginTried;
     /** True only while our own bundled page is showing; the bridge answers nobody else. */
     private volatile boolean ownPage;
     private String accessToken;
@@ -68,7 +82,10 @@ public class MainActivity extends Activity {
         web.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
         web.setWebViewClient(new Client());
         web.addJavascriptInterface(new Bridge(), "Android");
-        setContentView(web);
+        root = new FrameLayout(this);
+        root.addView(web, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(root);
         // "Remember this phone" switched off: what was saved lasts until the app
         // is closed, so a fresh start begins from the sign-in screen.
         if (savedInstanceState == null && !prefs().getBoolean("remember", true)) {
@@ -100,6 +117,14 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (routerLayer != null && routerLayer.getVisibility() == View.VISIBLE) {
+            if (luci.canGoBack()) {
+                luci.goBack();
+            } else {
+                closeRouter();
+            }
+            return;
+        }
         if (!ownPage) {
             ownPage = true;
             web.loadUrl(APP_PAGE);
@@ -114,8 +139,129 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (luci != null) {
+            luci.destroy();
+        }
         web.destroy();
         super.onDestroy();
+    }
+
+    private int dp(int value) {
+        return Math.round(TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics()));
+    }
+
+    private TextView barButton(String glyph, String description) {
+        TextView button = new TextView(this);
+        button.setText(glyph);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        button.setTextColor(0xFFFFFFFF);
+        button.setGravity(Gravity.CENTER);
+        button.setContentDescription(description);
+        button.setLayoutParams(new LinearLayout.LayoutParams(dp(52), dp(56)));
+        return button;
+    }
+
+    /** Build, once, the layer that shows the router's pages: a bar and a browser. */
+    private void buildRouterLayer() {
+        routerLayer = new LinearLayout(this);
+        routerLayer.setOrientation(LinearLayout.VERTICAL);
+        routerLayer.setBackgroundColor(getColor(R.color.window));
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setBackgroundColor(getColor(R.color.bar));
+        TextView close = barButton("\u2715", "Chiudi");
+        close.setOnClickListener(view -> closeRouter());
+        routerTitle = new TextView(this);
+        routerTitle.setTextColor(0xFFFFFFFF);
+        routerTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        routerTitle.setSingleLine(true);
+        routerTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        TextView reload = barButton("\u21BB", "Ricarica");
+        reload.setOnClickListener(view -> luci.reload());
+        bar.addView(close);
+        bar.addView(routerTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        bar.addView(reload);
+
+        luci = new WebView(this);
+        luci.setBackgroundColor(getColor(R.color.window));
+        WebSettings settings = luci.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+        // No bridge here: the router's pages get nothing from the app but, in
+        // router-only mode, the login the user already saved for that router.
+        luci.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String host = request.getUrl().getHost();
+                return host == null || !host.equals(routerHost);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                fillRouterLogin(url);
+            }
+        });
+
+        routerLayer.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+        routerLayer.addView(luci, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        routerLayer.setVisibility(View.GONE);
+        root.addView(routerLayer, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private void showRouter(String url, String title) {
+        if (routerLayer == null) {
+            buildRouterLayer();
+        }
+        routerHost = Uri.parse(url).getHost();
+        loginTried = false;
+        routerTitle.setText(title == null ? "" : title);
+        routerLayer.setVisibility(View.VISIBLE);
+        luci.loadUrl(url);
+    }
+
+    private void closeRouter() {
+        routerLayer.setVisibility(View.GONE);
+        luci.loadUrl("about:blank");
+        luci.clearHistory();
+    }
+
+    /** On the router's login page, type the saved login once instead of the user. */
+    private void fillRouterLogin(String url) {
+        SharedPreferences prefs = prefs();
+        if (loginTried || url == null || !"router".equals(prefs.getString("mode", ""))) {
+            return;
+        }
+        String host = Uri.parse(url).getHost();
+        if (host == null || !host.equals(routerHost)) {
+            return;
+        }
+        String password;
+        try {
+            password = decrypt(prefs.getString("routerPassword", ""));
+        } catch (Exception error) {
+            return;
+        }
+        if (password.isEmpty()) {
+            return;
+        }
+        String script = "(function(){var u=document.querySelector('input[name=luci_username]'),"
+                + "p=document.querySelector('input[name=luci_password]');if(!u||!p)return 0;"
+                + "u.value=" + JSONObject.quote(prefs.getString("routerUser", "root")) + ";"
+                + "p.value=" + JSONObject.quote(password) + ";"
+                + "var f=p.form||document.querySelector('form');if(f){f.submit();return 1}return 0})()";
+        luci.evaluateJavascript(script, value -> {
+            if ("1".equals(value)) {
+                loginTried = true;
+            }
+        });
     }
 
     private SharedPreferences prefs() {
@@ -394,6 +540,15 @@ public class MainActivity extends Activity {
             } catch (Exception error) {
                 return "";
             }
+        }
+
+        /** Show one of the router's own pages inside the app. */
+        @JavascriptInterface
+        public void openRouter(String url, String title) {
+            if (!ownPage || url == null || !(url.startsWith("http://") || url.startsWith("https://"))) {
+                return;
+            }
+            runOnUiThread(() -> showRouter(url, title));
         }
 
         @JavascriptInterface

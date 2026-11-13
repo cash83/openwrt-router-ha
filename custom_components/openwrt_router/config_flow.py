@@ -13,6 +13,7 @@ from homeassistant.helpers import selector
 
 from .api import OpenWrtApi, mac12
 from .const import (
+    CONF_NOTIFY,
     CONF_SHOW_PANEL,
     CONF_TRACK_ALL,
     CONF_TRACKED,
@@ -106,6 +107,7 @@ class OpenWrtOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             user_input[CONF_TRACKED] = sorted({mac12(m) for m in user_input.get(CONF_TRACKED, [])})
+            user_input[CONF_NOTIFY] = str(user_input.get(CONF_NOTIFY) or "").strip()
             return self.async_create_entry(title="", data=user_input)
 
         options = self.config_entry.options
@@ -132,6 +134,10 @@ class OpenWrtOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_SHOW_PANEL, default=options.get(CONF_SHOW_PANEL, True)
                     ): bool,
+                    vol.Optional(
+                        CONF_NOTIFY,
+                        description={"suggested_value": options.get(CONF_NOTIFY, "")},
+                    ): str,
                     vol.Required(CONF_TRACK_ALL, default=options.get(CONF_TRACK_ALL, False)): bool,
                     vol.Optional(CONF_TRACKED, default=chosen): selector.SelectSelector(
                         selector.SelectSelectorConfig(

@@ -26,7 +26,7 @@ const TEXT = {
     updated: "Aggiornato {n} s fa", noData: "Il router non risponde.", weak: "debole",
     fair: "discreto", good: "buono", excellent: "ottimo", excellentLink: "ottimo",
     day: "g", peers: "nodi collegati", peer: "nodo collegato", auto: "Automatico", powerMax: "Massima", powerMedium: "Media", powerLow: "Bassa", total: "Totale scaricato", totalUp: "Totale caricato",
-    topDown: "Scarica di più", topUp: "Carica di più", refresh: "Aggiorna", refreshed: "Dati aggiornati",
+    topDown: "Scarica di più", topUp: "Carica di più", isNew: "Nuovo", news: "Nuovi", routerPages: "Pagine del router", refresh: "Aggiorna", refreshed: "Dati aggiornati",
   },
   en: {
     title: "Home Wi-Fi", online: "Internet is up", offline: "No internet",
@@ -50,7 +50,7 @@ const TEXT = {
     updated: "Updated {n} s ago", noData: "The router does not answer.", weak: "weak",
     fair: "fair", good: "good", excellent: "excellent", excellentLink: "excellent",
     day: "d", peers: "linked nodes", peer: "linked node", auto: "Auto", powerMax: "Maximum", powerMedium: "Medium", powerLow: "Low", total: "Total downloaded", totalUp: "Total uploaded",
-    topDown: "Top downloader", topUp: "Top uploader", refresh: "Refresh", refreshed: "Data refreshed",
+    topDown: "Top downloader", topUp: "Top uploader", isNew: "New", news: "New", routerPages: "Router pages", refresh: "Refresh", refreshed: "Data refreshed",
   },
 };
 
@@ -63,6 +63,7 @@ const ICON = {
   cable: "M4 1h16v8h-3v2h-2V9h-2v2h-2V9H9v2H7V9H4V1m3 12h2v3a3 3 0 0 0 3 3 3 3 0 0 0 3-3v-3h2v3a5 5 0 0 1-4 4.9V23h-2v-2.1A5 5 0 0 1 7 16v-3z",
   light: "M12 2a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9v1z",
   power: "M16.56 5.44l-1.45 1.45A5.97 5.97 0 0 1 18 12a6 6 0 0 1-12 0c0-2.17 1.16-4.06 2.88-5.12L7.44 5.44A7.96 7.96 0 0 0 4 12a8 8 0 0 0 16 0c0-2.72-1.36-5.12-3.44-6.56M13 3h-2v10h2V3z",
+  tune: "M3 17v2h6v-2H3M3 5v2h10V5H3m10 16v-2h8v-2h-8v-2h-2v6h2M7 9v2H3v2h4v2h2V9H7m14 4v-2H11v2h10m-6-4h2V7h4V5h-4V3h-2v6z",
   close: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z",
   chevron: "M7.41 8.58L12 13.17l4.59-4.59L18 10l-6 6-6-6 1.41-1.42z",
 };
@@ -113,6 +114,7 @@ header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;h
   background:var(--app-header-background-color,var(--accent));color:var(--app-header-text-color,#fff)}
 header h1{flex:1;margin:0;font-size:20px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 header small{font-size:12px;opacity:.8;white-space:nowrap}
+.icon[hidden]{display:none}
 .icon{display:inline-grid;place-items:center;width:44px;height:44px;border:0;border-radius:50%;background:none;color:inherit;cursor:pointer}
 .icon:active{background:rgba(255,255,255,.16)}
 .icon.spin svg{animation:spin 1s linear infinite}
@@ -185,6 +187,7 @@ input[type=search]:focus{border-color:var(--accent)}
 .row .who span{display:block;font-size:12px;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .flow{text-align:right;font-size:11.5px;color:var(--soft);white-space:nowrap;flex:none}
 .row .flow b{display:block;font-weight:500;color:var(--primary-text-color)}
+.tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;background:var(--accent);color:#fff;font-size:10.5px;font-weight:600;font-style:normal;vertical-align:middle;text-transform:uppercase;letter-spacing:.04em}
 .row.blocked .who b{color:var(--low);text-decoration:line-through}
 .empty{padding:28px;text-align:center;color:var(--soft)}
 .veil{position:fixed;inset:0;z-index:20;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.55)}
@@ -236,6 +239,13 @@ class OpenWrtRouterPanel extends HTMLElement {
     if (menu) menu.style.display = value ? "" : "none";
   }
 
+  /** Set by a host that can open the router's own pages (the Android app). */
+  set routerMenu(value) {
+    this._routerMenu = Boolean(value);
+    const button = this.shadowRoot.getElementById("router");
+    if (button) button.hidden = !this._routerMenu;
+  }
+
   get t() {
     const language = (this._hass && this._hass.language) || "en";
     return TEXT[language.startsWith("it") ? "it" : "en"];
@@ -257,6 +267,7 @@ class OpenWrtRouterPanel extends HTMLElement {
       <header>
         <button class="icon" id="menu" aria-label="Menu">${svg("menu", 24)}</button>
         <h1>${esc(t.title)}</h1><small id="stamp"></small>
+        <button class="icon" id="router" aria-label="${esc(t.routerPages)}" hidden>${svg("tune", 22)}</button>
         <button class="icon" id="refresh" aria-label="${esc(t.refresh)}">${svg("refresh", 22)}</button>
       </header>
       <main>
@@ -277,6 +288,10 @@ class OpenWrtRouterPanel extends HTMLElement {
     root.getElementById("menu").addEventListener("click", () =>
       this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })));
     root.getElementById("refresh").addEventListener("click", () => this._refresh());
+    root.getElementById("router").hidden = !this._routerMenu;
+    root.getElementById("router").addEventListener("click", () =>
+      this.dispatchEvent(new CustomEvent("openwrt-router-menu", { bubbles: true, composed: true,
+        detail: { nodes: this.data ? Object.values(this.data.nodes) : [] } })));
     root.getElementById("search").addEventListener("input", (event) => {
       this._query = event.target.value.trim().toLowerCase();
       this._renderClients();
@@ -430,6 +445,9 @@ class OpenWrtRouterPanel extends HTMLElement {
       .concat(Object.values(nodes).map((node) => [`node:${node.id}`, `${node.name} ${node.clients ?? 0}`]))
       .concat([["band:2g", `2,4 GHz ${totals.wifi_2g}`], ["band:5g", `5 GHz ${totals.wifi_5g}`]])
       .concat(totals.wired ? [["band:wired", `${t.wired} ${totals.wired}`]] : []);
+    const fresh = Object.values(this.data.clients).filter((c) => c.is_new).length;
+    if (fresh) chips.splice(1, 0, ["new", `${t.news} ${fresh}`]);
+    else if (this._filter === "new") this._filter = "all";
     const sorts = [["signal", t.sortSignal], ["traffic", t.sortTraffic], ["usage", t.sortUsage], ["name", t.sortName]];
     this.shadowRoot.getElementById("filters").innerHTML =
       chips.map(([id, label]) => `<button class="chip ${this._filter === id ? "on" : ""}" data-filter="${esc(id)}">${esc(label)}</button>`).join("") +
@@ -443,6 +461,7 @@ class OpenWrtRouterPanel extends HTMLElement {
     const [kind, value] = this._filter.split(/:(.*)/s);
     if (kind === "node") list = list.filter((c) => c.node_id === value);
     if (kind === "band") list = list.filter((c) => c.band === value);
+    if (kind === "new") list = list.filter((c) => c.is_new);
     if (this._query) {
       list = list.filter((c) => `${c.name} ${c.ip || ""} ${c.mac}`.toLowerCase().includes(this._query));
     }
@@ -457,7 +476,7 @@ class OpenWrtRouterPanel extends HTMLElement {
     this.shadowRoot.getElementById("clients").innerHTML = list.length ? list.map((c) => `
       <button class="row ${c.blocked ? "blocked" : ""}" data-client="${esc(c.mac)}">
         ${c.band === "wired" ? `<span class="bars">${svg("cable", 18)}</span>` : bars(c.signal)}
-        <span class="who"><b>${esc(c.name)}</b><span>${esc(c.node)} · ${esc(c.band === "wired" ? t.wired : c.connection)}${c.signal == null ? "" : ` · ${c.signal} dBm`}${c.ip ? ` · ${esc(c.ip)}` : ""}</span></span>
+        <span class="who"><b>${esc(c.name)}${c.is_new ? ` <em class="tag">${esc(t.isNew)}</em>` : ""}</b><span>${esc(c.node)} · ${esc(c.band === "wired" ? t.wired : c.connection)}${c.signal == null ? "" : ` · ${c.signal} dBm`}${c.ip ? ` · ${esc(c.ip)}` : ""}</span></span>
         <span class="flow">${this._sort === "usage" && c.used_down != null
           ? `<b>↓ ${esc(size(c.used_down))}</b>↑ ${esc(size(c.used_up))}`
           : `<b>↓ ${esc(rate(c.down))}</b>↑ ${esc(rate(c.up))}`}</span>
@@ -468,7 +487,7 @@ class OpenWrtRouterPanel extends HTMLElement {
     const t = this.t;
     const c = Object.values(this.data.clients).find((client) => client.mac === this._sheetMac);
     if (!c) return this._close();
-    this._sheet(`<div class="grip"></div><h3>${esc(c.name)}</h3>
+    this._sheet(`<div class="grip"></div><h3>${esc(c.name)}${c.is_new ? ` <em class="tag">${esc(t.isNew)}</em>` : ""}</h3>
       <div class="sub">${esc(t.connectedTo)} ${esc(c.node)} · ${esc(c.band === "wired" ? t.wired : c.connection)}</div>
       <dl class="kv">
         ${c.signal == null ? "" : `<dt>${esc(t.signal)}</dt><dd>${bars(c.signal)} ${c.signal} dBm · ${esc(levelWord(t, c.signal))}</dd>`}

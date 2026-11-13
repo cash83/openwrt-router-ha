@@ -259,6 +259,21 @@
       return this.publicValue || null;
     }
 
+    /** Remember the clients seen so far; one that was never seen is "new" for a day. */
+    markNew(clients, now) {
+      const slot = "knownClients:" + this.base;
+      let known = null;
+      try { known = JSON.parse(localStorage.getItem(slot)); } catch (e) { /* none yet */ }
+      const first = !known;
+      known = known || {};
+      let changed = first;
+      for (const [key, client] of Object.entries(clients)) {
+        if (!(key in known)) { known[key] = first ? 0 : now; changed = true; }
+        client.is_new = now - known[key] < 86400000;
+      }
+      if (changed) { try { localStorage.setItem(slot, JSON.stringify(known)); } catch (e) { /* full */ } }
+    }
+
     speed(key, rx, tx, now) {
       const previous = this.bytes.get(key);
       this.bytes.set(key, [rx, tx, now]);
@@ -376,6 +391,7 @@
         };
       }
       for (const key of [...this.bytes.keys()]) if (!best[key]) this.bytes.delete(key);
+      this.markNew(clients, now);
 
       const everyone = Object.values(clients);
       for (const node of Object.values(nodes)) {

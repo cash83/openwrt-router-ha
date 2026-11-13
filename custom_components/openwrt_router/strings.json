@@ -35,10 +35,12 @@
         "data": {
           "scan_interval": "Seconds between two readings",
           "show_panel": "Show the Wi-Fi page in the sidebar",
+          "notify_service": "Notify when a new device joins",
           "track_all_clients": "Create a device for every client",
           "tracked_clients": "Clients to follow"
         },
         "data_description": {
+          "notify_service": "Name of a notify service, for example notify.mobile_app_my_phone. Leave empty for no notification; the event openwrt_router_new_device is fired either way.",
           "tracked_clients": "Each one gets a presence tracker, its signal, the node it is on and an internet access switch."
         }
       }

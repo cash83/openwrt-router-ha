@@ -109,6 +109,10 @@ TEXT = {
                 "data": {
                     "scan_interval": ("Seconds between two readings", "Secondi tra due letture"),
                     "show_panel": ("Show the Wi-Fi page in the sidebar", "Mostra la pagina Wi-Fi nel menu"),
+                    "notify_service": (
+                        "Notify when a new device joins",
+                        "Avvisa quando si collega un dispositivo nuovo",
+                    ),
                     "track_all_clients": (
                         "Create a device for every client",
                         "Crea un dispositivo per ogni client",
@@ -116,6 +120,14 @@ TEXT = {
                     "tracked_clients": ("Clients to follow", "Client da seguire"),
                 },
                 "data_description": {
+                    "notify_service": (
+                        "Name of a notify service, for example notify.mobile_app_my_phone. "
+                        "Leave empty for no notification; the event openwrt_router_new_device "
+                        "is fired either way.",
+                        "Nome di un servizio di notifica, per esempio notify.mobile_app_mio_telefono. "
+                        "Lascia vuoto per non ricevere notifiche; l'evento openwrt_router_new_device "
+                        "viene emesso comunque.",
+                    ),
                     "tracked_clients": (
                         "Each one gets a presence tracker, its signal, the node it is on and an "
                         "internet access switch.",
