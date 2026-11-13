@@ -32,6 +32,7 @@
   let version = "";
   let paused = false;
   let remoteNote = "";
+  let mfaFlow = "";
 
   // Whether the outside address is looked up from Home Assistant (Nabu Casa)
   // or typed by hand. Kept with the page, it holds nothing secret.
@@ -69,6 +70,7 @@
     if (resolve) { waiters.delete(id); resolve(value); }
   }
   window.appToken = (id, value) => answer(id, value);
+  window.appSignIn = (id, value) => answer(id, value);
   window.appHttp = (id, status, text) => {
     let json = null;
     try { json = JSON.parse(text); } catch (error) { /* not JSON */ }
@@ -77,6 +79,9 @@
 
   const accessToken = (url) => ask((id) => native.requestToken(url, id), 12000)
     .then((value) => value || { error: "unreachable" });
+  const haSignIn = (address, user, password, flow, code) =>
+    ask((id) => native.haSignIn(id, address, user, password, flow || "", code || ""), 40000)
+      .then((value) => value || { error: "unreachable" });
   const http = (url, body) => ask((id) => native.http(id, url, JSON.stringify(body)), 20000)
     .then((value) => value || { status: 0, json: null });
 
@@ -270,7 +275,7 @@
     $("tabRouter").classList.toggle("on", viaRouter);
     $("paneHa").hidden = viaRouter;
     $("paneRouter").hidden = !viaRouter;
-    $("connect").textContent = viaRouter ? "Collega al router" : "Accedi con Home Assistant";
+    $("connect").textContent = viaRouter ? "Collega al router" : mfaFlow ? "Conferma il codice" : "Accedi";
     const on = auto.on;
     $("auto").classList.toggle("on", on);
     $("auto").setAttribute("aria-checked", String(on));
@@ -297,6 +302,11 @@
     $("rUser").value = config.routerUser || "root";
     $("rPass").value = "";
     $("rPass").placeholder = config.routerSaved ? "Lascia vuoto per tenere quella salvata" : "Password del router";
+    $("hPass").value = "";
+    $("hPass").placeholder = config.signedIn ? "Lascia vuoto per tenere l'accesso già fatto" : "";
+    $("hCode").value = "";
+    mfaFlow = "";
+    $("mfa").hidden = true;
     paint();
     const error = $("error");
     error.textContent = message || "";
@@ -315,15 +325,6 @@
     }
     panel.hass = hass;
     if (panel._load) panel._load(true);
-  }
-
-  /** Is anything answering at that address? The reply itself is of no interest. */
-  function reachable(url) {
-    const halt = new AbortController();
-    const timer = setTimeout(() => halt.abort(), TIMEOUT);
-    return fetch(url + "/manifest.json", { mode: "no-cors", cache: "no-store", signal: halt.signal })
-      .then(() => true, () => false)
-      .finally(() => clearTimeout(timer));
   }
 
   async function submit() {
@@ -350,19 +351,44 @@
       }
       const home = clean($("home").value);
       const remote = auto.on ? clean(config.remote) : clean($("remote").value);
+      const user = $("hUser").value.trim();
+      const password = $("hPass").value;
       if (!home) return showSetup("Scrivi l'indirizzo di Home Assistant.");
-      button.textContent = "Apro l'accesso…";
+      const keep = config.signedIn && !password && !mfaFlow;
+      if (!keep && (!user || !password) && !mfaFlow) return fail("Scrivi utente e password di Home Assistant.");
+      button.textContent = "Accedo…";
       native.setMode("ha");
       native.saveAddresses(home, remote);
       config = { ...config, home, remote };
-      if (!(await reachable(home))) {
-        return showSetup("Home Assistant non risponde a questo indirizzo. Per il primo accesso conviene essere sul Wi-Fi di casa.");
+      if (!keep) {
+        const result = await haSignIn(home, user, password, mfaFlow, $("hCode").value);
+        if (result.mfa) {
+          mfaFlow = result.flow;
+          $("mfa").hidden = false;
+          $("hCode").value = "";
+          $("hCode").focus();
+          return fail(result.wrong ? "Codice non valido, riprova." : "Scrivi il codice di verifica a due fattori.");
+        }
+        mfaFlow = "";
+        if (result.error === "auth") return fail("Utente o password non corretti.");
+        if (result.error === "unsupported") return fail("A questo indirizzo non risponde un Home Assistant.");
+        if (!result.ok) return fail("Home Assistant non risponde a questo indirizzo. Fuori casa serve Tailscale acceso, oppure l'indirizzo Nabu Casa.");
       }
-      native.signIn(home);
+      readConfig();
+      banner("Mi collego…");
+      $("setup").classList.remove("show");
+      retry();
     } finally {
       button.disabled = false;
       paint();
     }
+  }
+
+  /** Show a message on the sign-in screen without clearing what was typed. */
+  function fail(message) {
+    const error = $("error");
+    error.textContent = message;
+    error.classList.add("show");
   }
 
   function openMenu() {

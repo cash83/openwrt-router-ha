@@ -79,9 +79,17 @@ ol{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5;color:var(--s
   </div>
 
   <div id="paneHa">
-    <p class="hint first">Funziona anche da fuori casa. Accedi con l'utente e la password di Home Assistant, sulla sua pagina.</p>
-    <label for="home">Indirizzo di Home Assistant in casa</label>
+    <p class="hint first">Funziona anche da fuori casa, con Nabu Casa o Tailscale. Usa l'utente e la password con cui entri in Home Assistant.</p>
+    <label for="home">Indirizzo di Home Assistant</label>
     <input id="home" type="url" inputmode="url" placeholder="http://192.168.50.165:8123" autocomplete="off" autocapitalize="off">
+    <label for="hUser">Utente</label>
+    <input id="hUser" type="text" autocomplete="off" autocapitalize="off">
+    <label for="hPass">Password</label>
+    <input id="hPass" type="password" autocomplete="off">
+    <div id="mfa" hidden>
+      <label for="hCode">Codice di verifica</label>
+      <input id="hCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Dall'app di autenticazione">
+    </div>
 
     <div class="switchrow">
       <div><b>Trova da solo l'indirizzo Nabu Casa</b><small id="autoState">Per usare l'app fuori casa senza Tailscale.</small></div>

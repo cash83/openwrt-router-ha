@@ -25,7 +25,7 @@ const TEXT = {
     updated: "Aggiornato {n} s fa", noData: "Il router non risponde.", weak: "debole",
     fair: "discreto", good: "buono", excellent: "ottimo", excellentLink: "ottimo",
     day: "g", peers: "nodi collegati", peer: "nodo collegato", auto: "Automatico", powerMax: "Massima", powerMedium: "Media", powerLow: "Bassa", total: "Totale scaricato", totalUp: "Totale caricato",
-    topDown: "Scarica di più", topUp: "Carica di più", refresh: "Aggiorna",
+    topDown: "Scarica di più", topUp: "Carica di più", refresh: "Aggiorna", refreshed: "Dati aggiornati",
   },
   en: {
     title: "Home Wi-Fi", online: "Internet is up", offline: "No internet",
@@ -48,7 +48,7 @@ const TEXT = {
     updated: "Updated {n} s ago", noData: "The router does not answer.", weak: "weak",
     fair: "fair", good: "good", excellent: "excellent", excellentLink: "excellent",
     day: "d", peers: "linked nodes", peer: "linked node", auto: "Auto", powerMax: "Maximum", powerMedium: "Medium", powerLow: "Low", total: "Total downloaded", totalUp: "Total uploaded",
-    topDown: "Top downloader", topUp: "Top uploader", refresh: "Refresh",
+    topDown: "Top downloader", topUp: "Top uploader", refresh: "Refresh", refreshed: "Data refreshed",
   },
 };
 
@@ -274,7 +274,7 @@ class OpenWrtRouterPanel extends HTMLElement {
     root.getElementById("menu").style.display = this._narrow ? "" : "none";
     root.getElementById("menu").addEventListener("click", () =>
       this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })));
-    root.getElementById("refresh").addEventListener("click", () => this._act({ action: "refresh" }, false));
+    root.getElementById("refresh").addEventListener("click", () => this._refresh());
     root.getElementById("search").addEventListener("input", (event) => {
       this._query = event.target.value.trim().toLowerCase();
       this._renderClients();
@@ -525,6 +525,26 @@ class OpenWrtRouterPanel extends HTMLElement {
     const message = { action: "radio", node: d.node || null, band: d.band, setting: d.setting, value: select.value };
     select.blur();
     this._ask(this.t.askWifiChange.replace("{what}", d.label).replace("{name}", d.ssid), message);
+  }
+
+  /** The round arrow: read the routers again now, and say so. */
+  async _refresh() {
+    if (this._busy) return;
+    const net = this.net;
+    const button = this.shadowRoot.getElementById("refresh");
+    this._busy = true;
+    button.classList.add("spin");
+    let failure = null;
+    try {
+      await this._hass.callWS({ type: "openwrt_router/action", entry_id: net && net.entry_id, action: "refresh" });
+    } catch (error) {
+      failure = error;
+    }
+    this._busy = false;
+    await this._load(true);
+    button.classList.remove("spin");
+    if (failure) this._toast(this.t.failed + (failure.message || failure), true);
+    else this._toast(this.t.refreshed);
   }
 
   async _act(message, announce = true) {

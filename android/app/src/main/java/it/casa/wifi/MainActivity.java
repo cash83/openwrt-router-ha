@@ -36,9 +36,9 @@ import javax.crypto.spec.GCMParameterSpec;
  * The page is bundled in the app and talks to Home Assistant over its WebSocket
  * API, so nothing is loaded from the network but the data itself.
  *
- * Signing in uses Home Assistant's own login page, the way a browser does: the
- * app never sees the password, only the refresh token Home Assistant hands out,
- * which is kept encrypted with a key that stays in the phone's keystore.
+ * Signing in to Home Assistant goes through the same steps its login page uses.
+ * The password is sent to Home Assistant and not kept; what is kept is the refresh
+ * token it hands out, encrypted with a key that stays in the phone's keystore.
  */
 public class MainActivity extends Activity {
 
@@ -51,8 +51,6 @@ public class MainActivity extends Activity {
     private WebView web;
     /** True only while our own bundled page is showing; the bridge answers nobody else. */
     private volatile boolean ownPage;
-    private volatile String loginBase;
-    private volatile String loginState;
     private String accessToken;
     private long accessTokenExpires;
 
@@ -95,8 +93,6 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (!ownPage) {
-            // Leaving Home Assistant's login page without signing in.
-            loginBase = null;
             web.loadUrl(APP_PAGE);
             return;
         }
@@ -131,25 +127,6 @@ public class MainActivity extends Activity {
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             ownPage = url != null && url.startsWith("file:///android_asset/");
         }
-
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            Uri uri = request.getUrl();
-            String base = loginBase;
-            if (base != null && uri.toString().startsWith(base)
-                    && "1".equals(uri.getQueryParameter(CALLBACK_MARK))) {
-                String code = uri.getQueryParameter("code");
-                String state = uri.getQueryParameter("state");
-                loginBase = null;
-                if (code == null || state == null || !state.equals(loginState)) {
-                    finishLogin("Accesso annullato.");
-                } else {
-                    new Thread(() -> finishLogin(exchange(base, code))).start();
-                }
-                return true;
-            }
-            return false;
-        }
     }
 
     /** Trade the one-time code for tokens. Returns an error text, or null when it worked. */
@@ -173,16 +150,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void finishLogin(String error) {
-        runOnUiThread(() -> {
-            String page = APP_PAGE;
-            if (error != null) {
-                page += "#errore=" + Uri.encode(error);
-            }
-            web.loadUrl(page);
-        });
-    }
-
     private static String enc(String text) throws Exception {
         return URLEncoder.encode(text, "UTF-8");
     }
@@ -198,6 +165,14 @@ public class MainActivity extends Activity {
         }
         json.put("_status", Integer.parseInt(reply[0]));
         return json;
+    }
+
+    private static JSONObject json(String[] reply) {
+        try {
+            return new JSONObject(reply[1]);
+        } catch (Exception notJson) {
+            return new JSONObject();
+        }
     }
 
     /** One POST. Returns {status, body}; throws when nobody answers. */
@@ -261,26 +236,70 @@ public class MainActivity extends Activity {
             return true;
         }
 
-        /** Show Home Assistant's login page; the result comes back as a page reload. */
+        /**
+         * Sign in to Home Assistant with the name and password typed in the app,
+         * through the same steps its own login page goes through. The answer comes
+         * back through window.appSignIn(id, answer): {"ok": true},
+         * {"mfa": true, "flow": "..."} when a second-factor code is wanted, or
+         * {"error": "auth" | "unreachable" | "unsupported"}.
+         */
         @JavascriptInterface
-        public void signIn(String address) {
+        public void haSignIn(int id, String address, String username, String password,
+                String flow, String code) {
             if (!ownPage) {
                 return;
             }
-            String base = trimUrl(address);
-            byte[] random = new byte[16];
-            new SecureRandom().nextBytes(random);
-            String state = Base64.encodeToString(random, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+            new Thread(() -> {
+                String answer = signIn(trimUrl(address), username, password, flow, code);
+                runOnUiThread(() -> {
+                    if (ownPage) {
+                        web.evaluateJavascript("window.appSignIn(" + id + "," + answer + ")", null);
+                    }
+                });
+            }).start();
+        }
+
+        private String signIn(String base, String username, String password, String flow, String code) {
             try {
-                String url = base + "/auth/authorize?response_type=code"
-                        + "&client_id=" + enc(base + "/")
-                        + "&redirect_uri=" + enc(base + "/?" + CALLBACK_MARK + "=1")
-                        + "&state=" + enc(state);
-                loginState = state;
-                loginBase = base;
-                runOnUiThread(() -> web.loadUrl(url));
-            } catch (Exception ignored) {
-                // Nothing to show: the page stays where it is.
+                String client = base + "/";
+                JSONObject step;
+                if (flow == null || flow.isEmpty()) {
+                    JSONObject start = new JSONObject();
+                    start.put("client_id", client);
+                    start.put("handler", new org.json.JSONArray().put("homeassistant").put(JSONObject.NULL));
+                    start.put("redirect_uri", base + "/?" + CALLBACK_MARK + "=1");
+                    JSONObject opened = json(send(base + "/auth/login_flow", "application/json", start.toString()));
+                    flow = opened.optString("flow_id", "");
+                    if (flow.isEmpty()) {
+                        return "{\"error\":\"unsupported\"}";
+                    }
+                    JSONObject login = new JSONObject();
+                    login.put("client_id", client);
+                    login.put("username", username == null ? "" : username.trim());
+                    login.put("password", password == null ? "" : password);
+                    step = json(send(base + "/auth/login_flow/" + flow, "application/json", login.toString()));
+                } else {
+                    JSONObject second = new JSONObject();
+                    second.put("client_id", client);
+                    second.put("code", code == null ? "" : code.trim());
+                    step = json(send(base + "/auth/login_flow/" + flow, "application/json", second.toString()));
+                }
+                String type = step.optString("type", "");
+                if ("create_entry".equals(type)) {
+                    String error = exchange(base, step.optString("result", ""));
+                    return error == null ? "{\"ok\":true}" : "{\"error\":\"unreachable\"}";
+                }
+                if ("form".equals(type) && "mfa".equals(step.optString("step_id"))) {
+                    JSONObject errors = step.optJSONObject("errors");
+                    JSONObject out = new JSONObject().put("mfa", true).put("flow", flow);
+                    if (errors != null && errors.length() > 0) {
+                        out.put("wrong", true);
+                    }
+                    return out.toString();
+                }
+                return "{\"error\":\"auth\"}";
+            } catch (Exception error) {
+                return "{\"error\":\"unreachable\"}";
             }
         }
 
