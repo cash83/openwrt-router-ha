@@ -666,6 +666,18 @@ class OpenWrtApi:
         """One call on one node, for the app's own pages. The caller checks it is allowed."""
         return self.call(obj, method, args, base=self._base(node_id), strict=True, timeout=40)
 
+    def backup(self, node_id: str) -> bytes:
+        """The node's configuration archive, the same file its web interface downloads."""
+        base = self._base(node_id)
+        self.call("system", "board", base=base, strict=True)  # a live session
+        reply = self._http.post(
+            f"{base}/cgi-bin/cgi-backup", data={"sessionid": self._sessions[base]}, timeout=60
+        )
+        reply.raise_for_status()
+        if not reply.content.startswith(b"\x1f\x8b"):
+            raise OpenWrtError("the router did not return a backup")
+        return reply.content
+
     def _ordered_nodes(self) -> list[str]:
         """Satellites first, so a change that cuts the link reaches them all."""
         nodes = self.snapshot.get("nodes") or {}

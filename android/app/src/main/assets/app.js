@@ -79,6 +79,20 @@
     answer(id, { status, json });
   };
 
+  window.appBackup = (id, status, data) => answer(id, { status, data });
+
+  /** A node's configuration archive, as base64. */
+  async function backup(node) {
+    if (mode !== "router") {
+      return (await hass.callWS({ type: "openwrt_router/backup", node: node.id })).data;
+    }
+    const base = router.baseOf(node.id);
+    await router.call("system", "board", {}, { base, strict: true });
+    const reply = await ask((id) => native.backup(id, base + "/cgi-bin/cgi-backup", router.sessions.get(base)), 70000);
+    if (!reply || reply.status !== 200 || !reply.data) throw new Error(reply && reply.status ? "il router ha rifiutato il backup" : "unreachable");
+    return reply.data;
+  }
+
   const accessToken = (url) => ask((id) => native.requestToken(url, id), 12000)
     .then((value) => value || { error: "unreachable" });
   const haSignIn = (address, user, password, flow, code) =>
@@ -448,6 +462,8 @@
             nodes: drawerNodes.slice(),
             rpc: (object, method, args) => rpc(node, object, method, args),
             rpcOn: (other, object, method, args) => rpc(other, object, method, args),
+            backup: () => backup(node),
+            save: (name, data) => native.saveFile(name, data),
             passwordChanged: (password) => {
               native.saveRouter(config.routerHost, config.routerUser || "root", password);
               if (router) router.password = password;

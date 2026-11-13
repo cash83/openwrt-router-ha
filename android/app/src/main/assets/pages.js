@@ -22,6 +22,7 @@
       ["software", "Software"],
       ["startup", "Avvio e servizi"],
       ["password", "Password del router"],
+      ["backup", "Backup delle impostazioni"],
       ["cron", "Operazioni pianificate"],
       ["reboot", "Riavvia"],
     ]],
@@ -472,7 +473,7 @@
     out.append(...card("Orologio di rete (NTP)",
       rows([["Sincronizzazione", ntp.enabled === "0" ? "spenta" : "accesa"]]),
       list(ntp.server).map((server) => item(server))));
-    out.append(note("Backup e aggiornamento del firmware restano nell'interfaccia web del router (in fondo al menu)."));
+    out.append(note("L'aggiornamento del firmware resta nell'interfaccia web del router (in fondo al menu)."));
   };
 
   PAGES.software = async (c, out) => {
@@ -672,6 +673,33 @@
         }, "ghost")));
     });
     out.append(note("Nome e password valgono per tutti i nodi. Canale, potenza e le altre impostazioni sono nella pagina principale «Wi-Fi e dispositivi»."));
+  };
+
+  PAGES.backup = async (c, out) => {
+    const board = await c.rpc("system", "board");
+    const result = h("div");
+    const start = button("Scarica il backup sul telefono", async () => {
+      start.disabled = true; start.textContent = "Scarico…";
+      try {
+        const data = await c.backup();
+        const name = `backup-${String(board.hostname || "router").replace(/[^A-Za-z0-9-]/g, "")}-${new Date().toISOString().slice(0, 10)}.tar.gz`;
+        const where = c.save(name, data);
+        result.textContent = "";
+        if (where) {
+          result.append(rows([["Salvato in", where], ["Dimensione", bytes(Math.round(data.length * 0.75))]]));
+          toast("Backup salvato");
+        } else result.append(h("p", { class: "bad" }, "Il telefono non ha permesso di salvare il file."));
+      } catch (error) {
+        result.textContent = "";
+        result.append(h("p", { class: "bad" }, explain(error)));
+      }
+      start.disabled = false; start.textContent = "Scarica il backup sul telefono";
+    });
+    out.append(...card("Backup di " + c.node.name,
+      note("Un file con tutte le impostazioni di questo nodo: reti Wi-Fi, IP fissi, porte aperte, DNS, mesh. Non contiene il firmware né i pacchetti installati."),
+      start, result));
+    out.append(note("Ogni nodo ha il suo backup: scegli il nodo dal menu e scaricalo per ciascuno. Il file contiene anche le password del Wi-Fi: tienilo al sicuro."),
+      note("Per rimettere un backup sul router si usa per ora l'interfaccia web (Sistema → Backup → Ripristina)."));
   };
 
   PAGES.interfaces = async (c, out) => {

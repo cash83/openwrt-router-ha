@@ -1,10 +1,14 @@
 package it.casa.wifi;
 
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
@@ -24,6 +28,8 @@ import android.widget.TextView;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -509,6 +515,91 @@ public class MainActivity extends Activity {
                     }
                 });
             }).start();
+        }
+
+        /**
+         * Ask a router for its configuration archive, with the session the page
+         * already holds. Answers through window.appBackup(id, status, base64).
+         */
+        @JavascriptInterface
+        public void backup(int id, String url, String session) {
+            if (!ownPage || url == null || !url.endsWith("/cgi-bin/cgi-backup") || session == null) {
+                return;
+            }
+            new Thread(() -> {
+                int status = 0;
+                String data = "";
+                HttpURLConnection connection = null;
+                try {
+                    connection = (HttpURLConnection) new URL(url).openConnection();
+                    connection.setConnectTimeout(TIMEOUT_MS);
+                    connection.setReadTimeout(60000);
+                    connection.setRequestMethod("POST");
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                    try (OutputStream out = connection.getOutputStream()) {
+                        out.write(("sessionid=" + URLEncoder.encode(session, "UTF-8")).getBytes(StandardCharsets.UTF_8));
+                    }
+                    status = connection.getResponseCode();
+                    if (status == 200) {
+                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                        try (InputStream stream = connection.getInputStream()) {
+                            byte[] chunk = new byte[8192];
+                            int read;
+                            while ((read = stream.read(chunk)) > 0) {
+                                buffer.write(chunk, 0, read);
+                            }
+                        }
+                        data = Base64.encodeToString(buffer.toByteArray(), Base64.NO_WRAP);
+                    }
+                } catch (Exception unreachable) {
+                    status = 0;
+                } finally {
+                    if (connection != null) {
+                        connection.disconnect();
+                    }
+                }
+                final String script = "window.appBackup(" + id + "," + status + ",'" + data + "')";
+                runOnUiThread(() -> {
+                    if (ownPage) {
+                        web.evaluateJavascript(script, null);
+                    }
+                });
+            }).start();
+        }
+
+        /** Save a file the page hands over into the phone's Download folder. Returns where, or "". */
+        @JavascriptInterface
+        public String saveFile(String name, String base64) {
+            if (!ownPage || name == null || base64 == null) {
+                return "";
+            }
+            String safe = name.replaceAll("[^A-Za-z0-9._-]", "_");
+            try {
+                byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+                if (Build.VERSION.SDK_INT >= 29) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.Downloads.DISPLAY_NAME, safe);
+                    values.put(MediaStore.Downloads.MIME_TYPE, "application/gzip");
+                    values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                    Uri target = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (target == null) {
+                        return "";
+                    }
+                    try (OutputStream out = getContentResolver().openOutputStream(target)) {
+                        out.write(bytes);
+                    }
+                    return "Download/" + safe;
+                }
+                File folder = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+                File file = new File(folder, safe);
+                try (FileOutputStream out = new FileOutputStream(file)) {
+                    out.write(bytes);
+                }
+                return file.getAbsolutePath();
+            } catch (Exception failed) {
+                return "";
+            }
         }
 
         /** Login of a router used without Home Assistant; the password is stored encrypted. */

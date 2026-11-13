@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 from pathlib import Path
 from typing import Any
@@ -168,6 +169,7 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_snapshot)
     websocket_api.async_register_command(hass, ws_action)
     websocket_api.async_register_command(hass, ws_ubus)
+    websocket_api.async_register_command(hass, ws_backup)
 
     await hass.http.async_register_static_paths(
         [StaticPathConfig(PANEL_STATIC_URL, str(Path(__file__).parent / PANEL_FILE), False)]
@@ -324,3 +326,25 @@ async def ws_ubus(
         connection.send_error(msg["id"], "failed", str(err))
         return
     connection.send_result(msg["id"], {"result": result})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/backup",
+        vol.Required("node"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_backup(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A node's configuration archive, for the app to save on the phone."""
+    try:
+        coordinator = _pick(hass, msg.get("entry_id"))
+        archive = await hass.async_add_executor_job(coordinator.api.backup, msg["node"])
+    except Exception as err:  # noqa: BLE001 - shown to the user as is
+        connection.send_error(msg["id"], "failed", str(err))
+        return
+    connection.send_result(msg["id"], {"data": base64.b64encode(archive).decode()})
