@@ -2,20 +2,29 @@ package it.casa.wifi;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
-import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Bundle;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
+import java.security.SecureRandom;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -26,13 +35,26 @@ import javax.crypto.spec.GCMParameterSpec;
  * One screen: a WebView showing the same page Home Assistant has in its sidebar.
  * The page is bundled in the app and talks to Home Assistant over its WebSocket
  * API, so nothing is loaded from the network but the data itself.
+ *
+ * Signing in uses Home Assistant's own login page, the way a browser does: the
+ * app never sees the password, only the refresh token Home Assistant hands out,
+ * which is kept encrypted with a key that stays in the phone's keystore.
  */
 public class MainActivity extends Activity {
 
     private static final String PREFS = "connection";
     private static final String KEY_ALIAS = "wifi_di_casa_token";
+    private static final String APP_PAGE = "file:///android_asset/index.html";
+    private static final String CALLBACK_MARK = "wifi_di_casa_login";
+    private static final int TIMEOUT_MS = 7000;
 
     private WebView web;
+    /** True only while our own bundled page is showing; the bridge answers nobody else. */
+    private volatile boolean ownPage;
+    private volatile String loginBase;
+    private volatile String loginState;
+    private String accessToken;
+    private long accessTokenExpires;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,35 +68,38 @@ public class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setTextZoom(100);
         web.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
-        web.setWebViewClient(new WebViewClient());
+        web.setWebViewClient(new Client());
         web.addJavascriptInterface(new Bridge(), "Android");
         setContentView(web);
-        web.loadUrl("file:///android_asset/index.html");
-    }
-
-    @Override
-    public void onConfigurationChanged(Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-        // Light and dark are handled by the page itself (prefers-color-scheme).
+        web.loadUrl(APP_PAGE);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         web.onResume();
-        web.evaluateJavascript("window.appResume && window.appResume()", null);
+        if (ownPage) {
+            web.evaluateJavascript("window.appResume && window.appResume()", null);
+        }
     }
 
     @Override
     protected void onPause() {
-        web.evaluateJavascript("window.appPause && window.appPause()", null);
+        if (ownPage) {
+            web.evaluateJavascript("window.appPause && window.appPause()", null);
+        }
         web.onPause();
         super.onPause();
     }
 
     @Override
     public void onBackPressed() {
-        // The page closes whatever it has open; when nothing is, leave the app.
+        if (!ownPage) {
+            // Leaving Home Assistant's login page without signing in.
+            loginBase = null;
+            web.loadUrl(APP_PAGE);
+            return;
+        }
         web.evaluateJavascript("(window.appBack && window.appBack()) ? 1 : 0", value -> {
             if (!"1".equals(value)) {
                 finish();
@@ -88,30 +113,235 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    /** What the page can ask the app: remember, read back and forget the connection. */
+    private SharedPreferences prefs() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE);
+    }
+
+    private static String trimUrl(String url) {
+        String out = url == null ? "" : url.trim();
+        while (out.endsWith("/")) {
+            out = out.substring(0, out.length() - 1);
+        }
+        return out;
+    }
+
+    private final class Client extends WebViewClient {
+
+        @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            ownPage = url != null && url.startsWith("file:///android_asset/");
+        }
+
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            Uri uri = request.getUrl();
+            String base = loginBase;
+            if (base != null && uri.toString().startsWith(base)
+                    && "1".equals(uri.getQueryParameter(CALLBACK_MARK))) {
+                String code = uri.getQueryParameter("code");
+                String state = uri.getQueryParameter("state");
+                loginBase = null;
+                if (code == null || state == null || !state.equals(loginState)) {
+                    finishLogin("Accesso annullato.");
+                } else {
+                    new Thread(() -> finishLogin(exchange(base, code))).start();
+                }
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /** Trade the one-time code for tokens. Returns an error text, or null when it worked. */
+    private String exchange(String base, String code) {
+        try {
+            JSONObject reply = post(base, "grant_type=authorization_code&code=" + enc(code)
+                    + "&client_id=" + enc(base + "/"));
+            String refresh = reply.optString("refresh_token", "");
+            if (refresh.isEmpty()) {
+                return "Home Assistant non ha concesso l'accesso.";
+            }
+            prefs().edit()
+                    .putString("refresh", encrypt(refresh))
+                    .putString("client", base + "/")
+                    .apply();
+            accessToken = reply.optString("access_token", null);
+            accessTokenExpires = System.currentTimeMillis() + reply.optLong("expires_in", 0) * 1000;
+            return null;
+        } catch (Exception error) {
+            return "Home Assistant non ha risposto durante l'accesso.";
+        }
+    }
+
+    private void finishLogin(String error) {
+        runOnUiThread(() -> {
+            String page = APP_PAGE;
+            if (error != null) {
+                page += "#errore=" + Uri.encode(error);
+            }
+            web.loadUrl(page);
+        });
+    }
+
+    private static String enc(String text) throws Exception {
+        return URLEncoder.encode(text, "UTF-8");
+    }
+
+    /** Home Assistant's token endpoint: form in, JSON out, with the HTTP status added. */
+    private static JSONObject post(String base, String body) throws Exception {
+        String[] reply = send(trimUrl(base) + "/auth/token", "application/x-www-form-urlencoded", body);
+        JSONObject json;
+        try {
+            json = reply[1].isEmpty() ? new JSONObject() : new JSONObject(reply[1]);
+        } catch (Exception notJson) {
+            json = new JSONObject();
+        }
+        json.put("_status", Integer.parseInt(reply[0]));
+        return json;
+    }
+
+    /** One POST. Returns {status, body}; throws when nobody answers. */
+    private static String[] send(String url, String contentType, String body) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            connection.setConnectTimeout(TIMEOUT_MS);
+            connection.setReadTimeout(TIMEOUT_MS * 2);
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", contentType);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write((body == null ? "" : body).getBytes(StandardCharsets.UTF_8));
+            }
+            int status = connection.getResponseCode();
+            InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            if (stream != null) {
+                byte[] chunk = new byte[4096];
+                int read;
+                while ((read = stream.read(chunk)) > 0) {
+                    buffer.write(chunk, 0, read);
+                }
+            }
+            return new String[] {String.valueOf(status), buffer.toString("UTF-8")};
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    /** What the bundled page can ask the app. Home Assistant's own pages get no answer. */
     private final class Bridge {
 
         @JavascriptInterface
         public String getConfig() {
-            SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+            JSONObject out = new JSONObject();
+            if (!ownPage) {
+                return out.toString();
+            }
             try {
-                JSONObject out = new JSONObject();
+                SharedPreferences prefs = prefs();
+                out.put("mode", prefs.getString("mode", ""));
                 out.put("home", prefs.getString("home", ""));
                 out.put("remote", prefs.getString("remote", ""));
-                out.put("token", decrypt(prefs.getString("token", "")));
-                return out.toString();
-            } catch (Exception error) {
-                return "{}";
+                out.put("signedIn", !prefs.getString("refresh", "").isEmpty());
+                out.put("routerHost", prefs.getString("routerHost", ""));
+                out.put("routerUser", prefs.getString("routerUser", ""));
+                out.put("routerSaved", !prefs.getString("routerPassword", "").isEmpty());
+            } catch (Exception ignored) {
+                // An empty answer makes the page show the sign-in screen.
             }
+            return out.toString();
         }
 
         @JavascriptInterface
-        public boolean saveConfig(String home, String remote, String token) {
+        public boolean saveAddresses(String home, String remote) {
+            if (!ownPage) {
+                return false;
+            }
+            prefs().edit().putString("home", trimUrl(home)).putString("remote", trimUrl(remote)).apply();
+            return true;
+        }
+
+        /** Show Home Assistant's login page; the result comes back as a page reload. */
+        @JavascriptInterface
+        public void signIn(String address) {
+            if (!ownPage) {
+                return;
+            }
+            String base = trimUrl(address);
+            byte[] random = new byte[16];
+            new SecureRandom().nextBytes(random);
+            String state = Base64.encodeToString(random, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
             try {
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                        .putString("home", home == null ? "" : home.trim())
-                        .putString("remote", remote == null ? "" : remote.trim())
-                        .putString("token", encrypt(token == null ? "" : token.trim()))
+                String url = base + "/auth/authorize?response_type=code"
+                        + "&client_id=" + enc(base + "/")
+                        + "&redirect_uri=" + enc(base + "/?" + CALLBACK_MARK + "=1")
+                        + "&state=" + enc(state);
+                loginState = state;
+                loginBase = base;
+                runOnUiThread(() -> web.loadUrl(url));
+            } catch (Exception ignored) {
+                // Nothing to show: the page stays where it is.
+            }
+        }
+
+        /**
+         * A short-lived access token, asked from Home Assistant at `address`.
+         * The answer, {"token": "..."} or {"error": "unreachable" | "auth"},
+         * comes back through window.appToken(id, answer).
+         */
+        @JavascriptInterface
+        public void requestToken(String address, int id) {
+            new Thread(() -> {
+                String answer = accessToken(address);
+                runOnUiThread(() -> {
+                    if (ownPage) {
+                        web.evaluateJavascript("window.appToken(" + id + "," + answer + ")", null);
+                    }
+                });
+            }).start();
+        }
+
+        /**
+         * POST a JSON body to a router's /ubus for the bundled page, which cannot
+         * do it itself across origins. Answers through window.appHttp(id, status, text).
+         */
+        @JavascriptInterface
+        public void http(int id, String url, String body) {
+            if (!ownPage || url == null || !url.endsWith("/ubus")) {
+                return;
+            }
+            new Thread(() -> {
+                int status = 0;
+                String text = "";
+                try {
+                    String[] reply = send(url, "application/json", body);
+                    status = Integer.parseInt(reply[0]);
+                    text = reply[1];
+                } catch (Exception unreachable) {
+                    // status 0 tells the page nobody answered.
+                }
+                final String script = "window.appHttp(" + id + "," + status + ","
+                        + JSONObject.quote(text) + ")";
+                runOnUiThread(() -> {
+                    if (ownPage) {
+                        web.evaluateJavascript(script, null);
+                    }
+                });
+            }).start();
+        }
+
+        /** Login of a router used without Home Assistant; the password is stored encrypted. */
+        @JavascriptInterface
+        public boolean saveRouter(String host, String user, String password) {
+            if (!ownPage) {
+                return false;
+            }
+            try {
+                prefs().edit()
+                        .putString("mode", "router")
+                        .putString("routerHost", trimUrl(host))
+                        .putString("routerUser", user == null ? "" : user.trim())
+                        .putString("routerPassword", encrypt(password == null ? "" : password))
                         .apply();
                 return true;
             } catch (Exception error) {
@@ -120,8 +350,92 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void clearConfig() {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply();
+        public String routerPassword() {
+            if (!ownPage) {
+                return "";
+            }
+            try {
+                return decrypt(prefs().getString("routerPassword", ""));
+            } catch (Exception error) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public void setMode(String mode) {
+            if (ownPage) {
+                prefs().edit().putString("mode", "router".equals(mode) ? "router" : "ha").apply();
+            }
+        }
+
+        private String accessToken(String address) {
+            JSONObject out = new JSONObject();
+            try {
+                if (!ownPage) {
+                    return out.put("error", "auth").toString();
+                }
+                synchronized (MainActivity.this) {
+                    if (accessToken != null && System.currentTimeMillis() < accessTokenExpires - 120_000) {
+                        return out.put("token", accessToken).toString();
+                    }
+                    SharedPreferences prefs = prefs();
+                    String refresh = decrypt(prefs.getString("refresh", ""));
+                    if (refresh.isEmpty()) {
+                        return out.put("error", "auth").toString();
+                    }
+                    JSONObject reply;
+                    try {
+                        reply = post(address, "grant_type=refresh_token&refresh_token=" + enc(refresh)
+                                + "&client_id=" + enc(prefs.getString("client", "")));
+                    } catch (Exception network) {
+                        return out.put("error", "unreachable").toString();
+                    }
+                    String token = reply.optString("access_token", "");
+                    if (token.isEmpty()) {
+                        int status = reply.optInt("_status");
+                        return out.put("error", status == 400 || status == 401 || status == 403
+                                ? "auth" : "unreachable").toString();
+                    }
+                    accessToken = token;
+                    accessTokenExpires = System.currentTimeMillis() + reply.optLong("expires_in", 0) * 1000;
+                    return out.put("token", token).toString();
+                }
+            } catch (Exception error) {
+                return "{\"error\":\"unreachable\"}";
+            }
+        }
+
+        /** Forget this phone: tell Home Assistant to drop the token, then erase it here. */
+        @JavascriptInterface
+        public void signOut() {
+            if (!ownPage) {
+                return;
+            }
+            SharedPreferences prefs = prefs();
+            String home = prefs.getString("home", "");
+            String remote = prefs.getString("remote", "");
+            try {
+                String refresh = decrypt(prefs.getString("refresh", ""));
+                if (!refresh.isEmpty()) {
+                    for (String address : new String[] {home, remote}) {
+                        if (address.isEmpty()) {
+                            continue;
+                        }
+                        try {
+                            post(address, "action=revoke&token=" + enc(refresh));
+                            break;
+                        } catch (Exception unreachable) {
+                            // Try the other address.
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // The local copy is erased either way.
+            }
+            synchronized (MainActivity.this) {
+                accessToken = null;
+            }
+            prefs.edit().clear().apply();
         }
 
         @JavascriptInterface
@@ -133,9 +447,6 @@ public class MainActivity extends Activity {
             }
         }
     }
-
-    // The access token is kept encrypted with a key that never leaves the
-    // phone's keystore, so a copy of the app's files is not enough to use it.
 
     private static SecretKey key() throws Exception {
         KeyStore store = KeyStore.getInstance("AndroidKeyStore");

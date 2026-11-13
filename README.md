@@ -47,3 +47,18 @@ Assistant, restart, then add "OpenWrt Router" from Settings > Devices & services
     python -m pytest tests            # no Home Assistant needed
     python tools/make_translations.py # after editing the texts
     python -m http.server 8770        # then open /preview/index.html
+
+## Android app ("Wi-Fi di casa")
+
+The `android` folder holds a small app that shows the same page as the sidebar. It can
+reach the network in two ways, chosen on its first screen:
+
+- **Home Assistant**: you type its address and sign in on Home Assistant's own login
+  page. The app keeps only the refresh token it is handed, encrypted on the phone.
+  With the switch on, it asks Home Assistant for its Nabu Casa address and uses it when
+  the home address does not answer.
+- **Router only**: address, user and password of the OpenWrt router; the app talks to
+  it directly (`assets/direct.js` mirrors `api.py`). Works on the home network or
+  through a VPN. The public IP is shown only when the router itself has one.
+
+Build (JDK 17, Gradle 8.7, Android SDK 35): `gradle assembleDebug` in `android`.

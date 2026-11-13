@@ -1,35 +1,44 @@
-/* Wi-Fi di casa — the glue between the bundled page and Home Assistant.
+/* Wi-Fi di casa — the glue between the bundled page and the network.
  *
  * The page (openwrt-router-panel.js) is the one Home Assistant shows in its
- * sidebar. There it is handed a `hass` object; here we build a small stand-in
- * that speaks Home Assistant's WebSocket API with a long-lived access token.
+ * sidebar. There it is handed a `hass` object; here we build a stand-in with
+ * the same `callWS`, backed by one of two things:
+ *
+ *  - Home Assistant, over its WebSocket API. Signing in happens on Home
+ *    Assistant's own login page (the Android side opens it and keeps the
+ *    result); this script only ever asks for a short-lived access token.
+ *  - The router itself (direct.js), for a house without Home Assistant.
  */
 (function () {
   "use strict";
 
-  // Outside the app (a desktop browser, for trying the layout) keep the
-  // settings in the page's own storage instead.
-  const native = window.Android || {
-    getConfig: () => localStorage.getItem("config") || "{}",
-    saveConfig: (home, remote, token) => { localStorage.setItem("config", JSON.stringify({ home, remote, token })); return true; },
-    clearConfig: () => localStorage.removeItem("config"),
-    version: () => "anteprima",
-  };
-
+  const native = window.Android;
   const $ = (id) => document.getElementById(id);
   const TIMEOUT = 6000;
 
   let config = {};
+  let mode = "ha";
   let socket = null;
   let ready = false;
+  let router = null;
   let nextId = 1;
   let pending = new Map();
+  let waiters = new Map();
+  let nextWaiter = 1;
   let panel = null;
   let retryTimer = null;
   let retryDelay = 1500;
   let connectedUrl = "";
-  let haVersion = "";
+  let version = "";
   let paused = false;
+  let remoteNote = "";
+
+  // Whether the outside address is looked up from Home Assistant (Nabu Casa)
+  // or typed by hand. Kept with the page, it holds nothing secret.
+  const auto = {
+    get on() { try { return localStorage.getItem("autoRemote") !== "0"; } catch (e) { return true; } },
+    set on(value) { try { localStorage.setItem("autoRemote", value ? "1" : "0"); } catch (e) {} },
+  };
 
   const clean = (url) => {
     url = (url || "").trim().replace(/\/+$/, "");
@@ -39,11 +48,41 @@
 
   function readConfig() {
     try { config = JSON.parse(native.getConfig()) || {}; } catch (error) { config = {}; }
-    return config.token && (config.home || config.remote);
+    mode = config.mode === "router" ? "router" : "ha";
+    return mode === "router"
+      ? Boolean(config.routerSaved && config.routerHost)
+      : Boolean(config.signedIn && (config.home || config.remote));
   }
 
-  /** Open a socket to one address; resolves once Home Assistant accepted the token. */
-  function open(url) {
+  // ---- answers coming back from the Android side
+
+  function ask(start, patience) {
+    return new Promise((resolve) => {
+      const id = nextWaiter++;
+      waiters.set(id, resolve);
+      start(id);
+      setTimeout(() => { if (waiters.delete(id)) resolve(null); }, patience);
+    });
+  }
+  function answer(id, value) {
+    const resolve = waiters.get(id);
+    if (resolve) { waiters.delete(id); resolve(value); }
+  }
+  window.appToken = (id, value) => answer(id, value);
+  window.appHttp = (id, status, text) => {
+    let json = null;
+    try { json = JSON.parse(text); } catch (error) { /* not JSON */ }
+    answer(id, { status, json });
+  };
+
+  const accessToken = (url) => ask((id) => native.requestToken(url, id), 12000)
+    .then((value) => value || { error: "unreachable" });
+  const http = (url, body) => ask((id) => native.http(id, url, JSON.stringify(body)), 20000)
+    .then((value) => value || { status: 0, json: null });
+
+  // ---- Home Assistant
+
+  function open(url, token) {
     return new Promise((resolve, reject) => {
       let settled = false;
       const ws = new WebSocket(url.replace(/^http/i, "ws") + "/api/websocket");
@@ -54,29 +93,30 @@
       ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
         if (message.type === "auth_required") {
-          ws.send(JSON.stringify({ type: "auth", access_token: config.token }));
+          ws.send(JSON.stringify({ type: "auth", access_token: token }));
         } else if (message.type === "auth_invalid") {
           clearTimeout(timer);
           fail("auth");
         } else if (message.type === "auth_ok") {
           clearTimeout(timer);
           settled = true;
-          haVersion = message.ha_version || "";
+          version = "Home Assistant " + (message.ha_version || "");
           resolve(ws);
         }
       };
     });
   }
 
-  async function connect() {
-    clearTimeout(retryTimer);
+  async function connectHa() {
     const urls = [clean(config.home), clean(config.remote)].filter(Boolean);
     let lastError = "unreachable";
     for (const url of urls) {
+      const token = await accessToken(url);
+      if (token.error === "auth") throw new Error("auth");
+      if (!token.token) continue;
       try {
-        const ws = await open(url);
-        adopt(ws, url);
-        return true;
+        adopt(await open(url, token.token), url);
+        return;
       } catch (error) {
         lastError = error.message;
         if (lastError === "auth") break;
@@ -89,8 +129,6 @@
     socket = ws;
     ready = true;
     connectedUrl = url;
-    retryDelay = 1500;
-    banner("");
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
       const waiting = pending.get(message.id);
@@ -99,10 +137,7 @@
       if (message.success) waiting.resolve(message.result);
       else waiting.reject(new Error((message.error && message.error.message) || "errore"));
     };
-    ws.onclose = ws.onerror = () => {
-      if (socket !== ws) return;
-      dropped();
-    };
+    ws.onclose = ws.onerror = () => { if (socket === ws) dropped(); };
   }
 
   function dropped() {
@@ -112,49 +147,157 @@
     pending.clear();
     if (paused) return;
     banner("Collegamento a casa interrotto, riprovo…");
+    later();
+  }
+
+  // ---- the router alone
+
+  async function connectRouter() {
+    const candidate = new window.DirectRouter(config.routerHost, config.routerUser, native.routerPassword(), http);
+    let accepted;
+    try {
+      accepted = await candidate.authenticate();
+    } catch (error) {
+      throw new Error("unreachable");
+    }
+    if (!accepted) throw new Error("auth");
+    const board = await candidate.call("system", "board");
+    const release = (board && board.release) || {};
+    version = [release.distribution, release.version].filter(Boolean).join(" ");
+    router = candidate;
+    ready = true;
+    connectedUrl = candidate.base;
+  }
+
+  // ---- common
+
+  const hass = {
+    language: (navigator.language || "it").toLowerCase(),
+    callWS(message) {
+      if (!ready) return Promise.reject(new Error("non collegato"));
+      if (mode === "router") {
+        return router.handle(message).catch((error) => {
+          if (error instanceof window.DirectRouterAuthError) { ready = false; showSetup("Il router non accetta più utente e password."); }
+          else if (error.message === "unreachable") { ready = false; if (!paused) { banner("Router non raggiungibile, riprovo…"); later(); } }
+          throw error;
+        });
+      }
+      if (!socket) return Promise.reject(new Error("non collegato"));
+      const id = nextId++;
+      return new Promise((resolve, reject) => {
+        pending.set(id, { resolve, reject });
+        socket.send(JSON.stringify({ id, ...message }));
+        setTimeout(() => { if (pending.delete(id)) reject(new Error("nessuna risposta da casa")); }, 90000);
+      });
+    },
+  };
+
+  function later() {
+    clearTimeout(retryTimer);
     retryTimer = setTimeout(retry, retryDelay);
     retryDelay = Math.min(retryDelay * 1.6, 15000);
   }
 
   async function retry() {
+    clearTimeout(retryTimer);
     try {
-      await connect();
-      showApp();
+      await (mode === "router" ? connectRouter() : connectHa());
     } catch (error) {
-      if (error.message === "auth") return showSetup("Home Assistant non accetta più il token. Creane uno nuovo.");
-      banner("Casa non raggiungibile, riprovo…");
-      retryTimer = setTimeout(retry, retryDelay);
-      retryDelay = Math.min(retryDelay * 1.6, 15000);
+      if (error.message === "auth") {
+        return showSetup(mode === "router"
+          ? "Il router ha rifiutato utente o password."
+          : "L'accesso a Home Assistant è scaduto. Accedi di nuovo.");
+      }
+      banner(mode === "router" ? "Router non raggiungibile, riprovo…" : "Casa non raggiungibile, riprovo…");
+      return later();
+    }
+    retryDelay = 1500;
+    const problem = mode === "ha" ? await check() : "";
+    if (problem) return showSetup(problem);
+    banner("");
+    showApp();
+    if (mode === "ha") findRemote();
+  }
+
+  /** Ask Home Assistant for its Nabu Casa address and remember it. */
+  async function findRemote() {
+    if (!auto.on) { remoteNote = config.remote ? "" : "non impostato"; return; }
+    try {
+      const cloud = await hass.callWS({ type: "cloud/status" });
+      const usable = cloud && cloud.logged_in && cloud.remote_domain
+        && cloud.prefs && cloud.prefs.remote_enabled !== false;
+      if (!usable) {
+        remoteNote = cloud && cloud.logged_in
+          ? "Nabu Casa: accesso remoto spento in Home Assistant"
+          : "Nabu Casa non è attivo su questo Home Assistant";
+        return;
+      }
+      const found = "https://" + cloud.remote_domain;
+      remoteNote = cloud.remote_connected === false ? "Nabu Casa (ora non collegato)" : "Nabu Casa, trovato da solo";
+      if (found !== clean(config.remote)) {
+        config.remote = found;
+        native.saveAddresses(config.home || "", found);
+      }
+    } catch (error) {
+      remoteNote = config.remote ? "Nabu Casa, salvato" : "non ancora trovato";
     }
   }
 
-  const hass = {
-    language: (navigator.language || "it").toLowerCase(),
-    callWS(message) {
-      if (!ready || !socket) return Promise.reject(new Error("non collegato"));
-      const id = nextId++;
-      return new Promise((resolve, reject) => {
-        pending.set(id, { resolve, reject });
-        socket.send(JSON.stringify({ id, ...message }));
-        setTimeout(() => {
-          if (pending.delete(id)) reject(new Error("nessuna risposta da casa"));
-        }, 90000);
-      });
-    },
-  };
+  /** The integration must be there, and the user must be allowed to use it. */
+  async function check() {
+    try {
+      await hass.callWS({ type: "openwrt_router/snapshot" });
+      return "";
+    } catch (error) {
+      if (/unknown command/i.test(error.message)) {
+        return "Su questo Home Assistant non è installata l'integrazione OpenWrt Router. Puoi usare la scheda \"Solo router\".";
+      }
+      if (/unauthorized|admin/i.test(error.message)) {
+        return "Serve un utente amministratore di Home Assistant.";
+      }
+      return "";
+    }
+  }
 
   function banner(text) {
     $("bannerText").textContent = text;
     $("banner").classList.toggle("show", Boolean(text));
   }
 
+  function paint() {
+    const viaRouter = mode === "router";
+    $("tabHa").classList.toggle("on", !viaRouter);
+    $("tabRouter").classList.toggle("on", viaRouter);
+    $("paneHa").hidden = viaRouter;
+    $("paneRouter").hidden = !viaRouter;
+    $("connect").textContent = viaRouter ? "Collega al router" : "Accedi con Home Assistant";
+    const on = auto.on;
+    $("auto").classList.toggle("on", on);
+    $("auto").setAttribute("aria-checked", String(on));
+    $("remoteManual").hidden = on;
+    $("autoState").textContent = on
+      ? (config.remote ? "Trovato: " + clean(config.remote) : "Lo cerco appena l'app si collega da casa. Serve Nabu Casa attivo.")
+      : "Spento: scrivi tu l'indirizzo qui sotto.";
+  }
+
+  function stop() {
+    clearTimeout(retryTimer);
+    ready = false;
+    router = null;
+    if (socket) { const ws = socket; socket = null; ws.close(); }
+  }
+
   function showSetup(message) {
+    stop();
     $("app").style.display = "none";
     $("setup").classList.add("show");
     $("home").value = config.home || "";
     $("remote").value = config.remote || "";
-    $("token").value = "";
-    $("token").placeholder = config.token ? "Lascia vuoto per tenere il token salvato" : "Incolla qui il token";
+    $("rHost").value = config.routerHost || "";
+    $("rUser").value = config.routerUser || "root";
+    $("rPass").value = "";
+    $("rPass").placeholder = config.routerSaved ? "Lascia vuoto per tenere quella salvata" : "Password del router";
+    paint();
     const error = $("error");
     error.textContent = message || "";
     error.classList.toggle("show", Boolean(message));
@@ -174,49 +317,61 @@
     if (panel._load) panel._load(true);
   }
 
-  async function check() {
-    // The integration must be installed: ask for the snapshot once.
-    try {
-      await hass.callWS({ type: "openwrt_router/snapshot" });
-      return "";
-    } catch (error) {
-      return /unknown command|Unknown command/i.test(error.message)
-        ? "Su questo Home Assistant non è installata l'integrazione OpenWrt Router."
-        : /Unauthorized|admin/i.test(error.message)
-          ? "Il token deve appartenere a un utente amministratore."
-          : "";
-    }
+  /** Is anything answering at that address? The reply itself is of no interest. */
+  function reachable(url) {
+    const halt = new AbortController();
+    const timer = setTimeout(() => halt.abort(), TIMEOUT);
+    return fetch(url + "/manifest.json", { mode: "no-cors", cache: "no-store", signal: halt.signal })
+      .then(() => true, () => false)
+      .finally(() => clearTimeout(timer));
   }
 
   async function submit() {
     const button = $("connect");
-    const token = $("token").value.trim() || config.token || "";
-    const home = clean($("home").value);
-    const remote = clean($("remote").value);
-    if (!home && !remote) return showSetup("Scrivi almeno un indirizzo di Home Assistant.");
-    if (!token) return showSetup("Incolla il token di accesso.");
     button.disabled = true;
-    button.textContent = "Collego…";
-    config = { home, remote, token };
     try {
-      await connect();
-      const problem = await check();
-      if (problem) { if (socket) socket.close(); ready = false; return showSetup(problem); }
-      native.saveConfig(home, remote, token);
-      showApp();
-    } catch (error) {
-      showSetup(error.message === "auth"
-        ? "Home Assistant ha rifiutato il token. Controlla di averlo copiato tutto."
-        : "Home Assistant non risponde a questi indirizzi. Sei sulla rete di casa o con Tailscale acceso?");
+      if (mode === "router") {
+        const host = clean($("rHost").value);
+        const user = $("rUser").value.trim() || "root";
+        const password = $("rPass").value || native.routerPassword();
+        if (!host) return showSetup("Scrivi l'indirizzo del router.");
+        if (!password) return showSetup("Scrivi la password del router.");
+        button.textContent = "Collego…";
+        native.saveRouter(host, user, password);
+        readConfig();
+        try {
+          await connectRouter();
+        } catch (error) {
+          return showSetup(error.message === "auth"
+            ? "Il router ha rifiutato utente o password."
+            : "Il router non risponde a questo indirizzo. Sei sul Wi-Fi di casa?");
+        }
+        return showApp();
+      }
+      const home = clean($("home").value);
+      const remote = auto.on ? clean(config.remote) : clean($("remote").value);
+      if (!home) return showSetup("Scrivi l'indirizzo di Home Assistant.");
+      button.textContent = "Apro l'accesso…";
+      native.setMode("ha");
+      native.saveAddresses(home, remote);
+      config = { ...config, home, remote };
+      if (!(await reachable(home))) {
+        return showSetup("Home Assistant non risponde a questo indirizzo. Per il primo accesso conviene essere sul Wi-Fi di casa.");
+      }
+      native.signIn(home);
     } finally {
       button.disabled = false;
-      button.textContent = "Collega";
+      paint();
     }
   }
 
   function openMenu() {
     $("mUrl").textContent = connectedUrl || "—";
-    $("mVersion").textContent = haVersion || "—";
+    $("mRemote").textContent = mode === "router"
+      ? "serve una VPN verso casa"
+      : [clean(config.remote), remoteNote].filter(Boolean).join(" · ") || "—";
+    $("mVersionLabel").textContent = mode === "router" ? "Router" : "Sistema";
+    $("mVersion").textContent = version || "—";
     $("mApp").textContent = native.version();
     $("menu").classList.add("show");
   }
@@ -224,15 +379,18 @@
   const closeMenu = () => $("menu").classList.remove("show");
 
   $("connect").addEventListener("click", submit);
+  $("tabHa").addEventListener("click", () => { mode = "ha"; paint(); });
+  $("tabRouter").addEventListener("click", () => { mode = "router"; paint(); });
+  $("auto").addEventListener("click", () => { auto.on = !auto.on; paint(); });
   $("mClose").addEventListener("click", closeMenu);
   $("menu").addEventListener("click", (event) => { if (event.target.id === "menu") closeMenu(); });
   $("mEdit").addEventListener("click", () => { closeMenu(); showSetup(""); });
   $("mForget").addEventListener("click", () => {
     closeMenu();
-    native.clearConfig();
+    stop();
+    native.signOut();
     config = {};
-    if (socket) { const ws = socket; socket = null; ready = false; ws.close(); }
-    clearTimeout(retryTimer);
+    mode = "ha";
     showSetup("");
   });
 
@@ -242,20 +400,28 @@
     const root = panel && panel.shadowRoot;
     const veil = root && root.getElementById("veil");
     if (veil && veil.classList.contains("open")) { panel._close(); return true; }
-    if ($("setup").classList.contains("show") && readConfig() && ready) { showApp(); return true; }
+    if ($("setup").classList.contains("show") && panel && readConfig()) {
+      banner("Mi collego…");
+      $("setup").classList.remove("show");
+      retry();
+      return true;
+    }
     return false;
   };
   window.appPause = () => { paused = true; };
   window.appResume = () => {
     paused = false;
-    if (!ready && config.token && !$("setup").classList.contains("show")) retry();
+    if ($("setup").classList.contains("show")) return;
+    if (!ready) retry();
     else if (panel && panel._load) panel._load(true);
   };
 
-  if (readConfig()) {
-    banner("Mi collego a casa…");
+  const failure = /^#errore=(.*)$/.exec(location.hash || "");
+  if (failure) history.replaceState(null, "", location.pathname);
+  if (readConfig() && !failure) {
+    banner("Mi collego…");
     retry();
   } else {
-    showSetup("");
+    showSetup(failure ? decodeURIComponent(failure[1]) : "");
   }
 })();

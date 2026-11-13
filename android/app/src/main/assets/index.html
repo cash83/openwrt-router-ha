@@ -26,6 +26,17 @@ input,textarea{width:100%;padding:14px;border:1px solid var(--divider-color);bor
   background:var(--card-background-color);color:inherit;font:inherit;font-size:15px}
 textarea{min-height:104px;resize:none;font-family:ui-monospace,monospace;font-size:12.5px;word-break:break-all}
 input:focus,textarea:focus{border-color:var(--primary-color)}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin-bottom:6px;border-radius:16px;background:var(--divider-color)}
+.tab{min-height:44px;border:0;border-radius:12px;background:none;color:var(--secondary-text-color);font:inherit;font-size:14.5px;font-weight:600}
+.tab.on{background:var(--card-background-color);color:var(--primary-text-color);box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.hint.first{margin:14px 2px 2px;font-size:13.5px}
+.switchrow{display:flex;align-items:center;gap:14px;margin-top:18px;padding:14px;border:1px solid var(--divider-color);
+  border-radius:14px;background:var(--card-background-color)}
+.switchrow div{flex:1;min-width:0}.switchrow b{display:block;font-size:14.5px;font-weight:600}
+.switchrow small{display:block;margin-top:3px;font-size:12.5px;line-height:1.4;color:var(--secondary-text-color)}
+.toggle{position:relative;width:52px;height:32px;border:0;border-radius:99px;background:var(--divider-color);flex:none;transition:background .15s}
+.toggle::after{content:"";position:absolute;top:4px;left:4px;width:24px;height:24px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.toggle.on{background:var(--primary-color)}.toggle.on::after{transform:translateX(20px)}
 .hint{margin:6px 2px 0;font-size:12.5px;line-height:1.45;color:var(--secondary-text-color)}
 button.main{width:100%;min-height:52px;margin-top:22px;border:0;border-radius:16px;background:var(--primary-color);
   color:#fff;font:inherit;font-size:16px;font-weight:600}
@@ -60,38 +71,55 @@ ol{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5;color:var(--s
     <path d="M47.64 65.64A9 9 0 0 1 60.36 65.64" stroke="#fff" stroke-width="4.4"/><path d="M41.98 59.98A17 17 0 0 1 66.02 59.98" stroke="#fff" stroke-width="4.4"/>
     <circle cx="54" cy="72" r="3.6" fill="#fff"/></svg></div>
   <h1>Wi-Fi di casa</h1>
-  <p class="lead">Collega l'app al tuo Home Assistant. I dati restano tra il telefono e casa tua.</p>
+  <p class="lead">Scegli come collegare l'app alla tua rete.</p>
 
-  <label for="home">Indirizzo di Home Assistant in casa</label>
-  <input id="home" type="url" inputmode="url" placeholder="http://192.168.50.165:8123" autocomplete="off" autocapitalize="off">
+  <div class="tabs" role="tablist">
+    <button class="tab on" id="tabHa" role="tab">Home Assistant</button>
+    <button class="tab" id="tabRouter" role="tab">Solo router</button>
+  </div>
 
-  <label for="remote">Indirizzo da fuori casa (facoltativo)</label>
-  <input id="remote" type="url" inputmode="url" placeholder="http://100.x.y.z:8123" autocomplete="off" autocapitalize="off">
-  <p class="hint">L'indirizzo Tailscale di Home Assistant. L'app prova prima quello di casa, poi questo.</p>
+  <div id="paneHa">
+    <p class="hint first">Funziona anche da fuori casa. Accedi con l'utente e la password di Home Assistant, sulla sua pagina.</p>
+    <label for="home">Indirizzo di Home Assistant in casa</label>
+    <input id="home" type="url" inputmode="url" placeholder="http://192.168.50.165:8123" autocomplete="off" autocapitalize="off">
 
-  <label for="token">Token di accesso</label>
-  <textarea id="token" placeholder="Incolla qui il token" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
-  <ol>
-    <li>In Home Assistant tocca il tuo nome in basso a sinistra.</li>
-    <li>Apri la scheda <b>Sicurezza</b> e scendi fino a <b>Token di accesso a lunga vita</b>.</li>
-    <li>Crea un token, chiamalo "App Wi-Fi", copialo e incollalo qui.</li>
-  </ol>
+    <div class="switchrow">
+      <div><b>Trova da solo l'indirizzo Nabu Casa</b><small id="autoState">Per usare l'app fuori casa senza Tailscale.</small></div>
+      <button class="toggle on" id="auto" role="switch" aria-checked="true" aria-label="Trova da solo l'indirizzo Nabu Casa"></button>
+    </div>
+    <div id="remoteManual" hidden>
+      <label for="remote">Indirizzo da fuori casa (facoltativo)</label>
+      <input id="remote" type="url" inputmode="url" placeholder="https://xxxx.ui.nabu.casa oppure http://100.x.y.z:8123" autocomplete="off" autocapitalize="off">
+      <p class="hint">Nabu Casa o Tailscale. L'app prova prima l'indirizzo di casa, poi questo.</p>
+    </div>
+  </div>
+
+  <div id="paneRouter" hidden>
+    <p class="hint first">Senza Home Assistant: l'app parla direttamente con il router OpenWrt. Funziona sul Wi-Fi di casa, o da fuori con una VPN verso casa.</p>
+    <label for="rHost">Indirizzo del router</label>
+    <input id="rHost" type="url" inputmode="url" placeholder="192.168.1.1" autocomplete="off" autocapitalize="off">
+    <label for="rUser">Utente</label>
+    <input id="rUser" type="text" value="root" autocomplete="off" autocapitalize="off">
+    <label for="rPass">Password</label>
+    <input id="rPass" type="password" placeholder="Password del router" autocomplete="off">
+  </div>
 
   <div class="error" id="error"></div>
-  <button class="main" id="connect">Collega</button>
+  <button class="main" id="connect">Accedi con Home Assistant</button>
 </section>
 
 <div id="app"></div>
 <div id="banner"><i></i><span id="bannerText"></span></div>
 <div id="menu"><div class="sheet">
   <div class="grip"></div><h2>Collegamento</h2>
-  <dl><dt>Collegato a</dt><dd id="mUrl">—</dd><dt>Home Assistant</dt><dd id="mVersion">—</dd><dt>App</dt><dd id="mApp">—</dd></dl>
-  <button class="plain" id="mEdit">Cambia indirizzi o token</button>
+  <dl><dt>Collegato a</dt><dd id="mUrl">—</dd><dt>Da fuori casa</dt><dd id="mRemote">—</dd><dt id="mVersionLabel">Home Assistant</dt><dd id="mVersion">—</dd><dt>App</dt><dd id="mApp">—</dd></dl>
+  <button class="plain" id="mEdit">Cambia collegamento</button>
   <button class="plain danger" id="mForget">Scollega questo telefono</button>
   <button class="plain" id="mClose">Chiudi</button>
 </div></div>
 
 <script src="openwrt-router-panel.js"></script>
+<script src="direct.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
