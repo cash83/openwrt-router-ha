@@ -341,7 +341,7 @@ public class MainActivity extends Activity {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         try {
             connection.setConnectTimeout(TIMEOUT_MS);
-            connection.setReadTimeout(TIMEOUT_MS * 2);
+            connection.setReadTimeout(TIMEOUT_MS * 5);
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", contentType);

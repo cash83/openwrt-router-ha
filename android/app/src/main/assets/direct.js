@@ -549,6 +549,23 @@
         { base: this.baseOf(client.node_id), strict: true });
     }
 
+    /** Send a client to one node: the others turn it away for a minute. */
+    async moveClient(mac, nodeId) {
+      const nodes = (this.snapshot && this.snapshot.nodes) || {};
+      if (!nodes[nodeId] || !nodes[nodeId].online) throw new Error("il nodo scelto non è raggiungibile");
+      const addr = colon(mac).toLowerCase();
+      for (const [otherId, node] of Object.entries(nodes)) {
+        if (otherId === nodeId || !node.online) continue;
+        const base = this.baseOf(otherId);
+        for (const radio of Object.values(node.radios || {})) {
+          if (radio.ifname) {
+            await this.call(`hostapd.${radio.ifname}`, "del_client",
+              { addr, reason: 5, deauth: true, ban_time: 60000 }, { base });
+          }
+        }
+      }
+    }
+
     async setLeds(nodeId, enabled) {
       const base = this.baseOf(nodeId);
       const leds = await this.call("luci", "getLEDs", {}, { base, strict: true });
@@ -593,6 +610,7 @@
       else if (m.action === "leds") await this.setLeds(m.node, Boolean(m.value));
       else if (m.action === "radio") await this.setRadio(m.node || null, m.band, m.setting, m.value);
       else if (m.action === "restart_radio") await this.restartRadio(m.node, m.band);
+      else if (m.action === "move") await this.moveClient(m.mac, m.node);
       else if (m.action === "kick") await this.kickClient(m.mac, m.ban_seconds);
       else if (m.action === "block") await this.blockClient(m.mac, Boolean(m.value));
       this.readAt = 0;

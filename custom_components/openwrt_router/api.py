@@ -32,6 +32,7 @@ BLOCK_RULE_PREFIX = "habrk_"
 PUBLIC_IP_URL = "https://api.ipify.org"
 PUBLIC_IP_MAX_AGE = 900
 WIRED_GRACE = 180
+MOVE_BAN = 60
 
 BANDS = ("2g", "5g", "6g")
 BAND_LABEL = {"2g": "2.4 GHz", "5g": "5 GHz", "6g": "6 GHz"}
@@ -115,7 +116,9 @@ class OpenWrtApi:
 
     # ------------------------------------------------------------------ rpc
 
-    def _post(self, base: str, session: str, obj: str, method: str, args: dict) -> Any:
+    def _post(
+        self, base: str, session: str, obj: str, method: str, args: dict, timeout: int = TIMEOUT
+    ) -> Any:
         reply = self._http.post(
             f"{base}/ubus",
             json={
@@ -124,7 +127,7 @@ class OpenWrtApi:
                 "method": "call",
                 "params": [session, obj, method, args],
             },
-            timeout=TIMEOUT,
+            timeout=timeout,
         )
         reply.raise_for_status()
         return reply.json()
@@ -156,6 +159,7 @@ class OpenWrtApi:
         base: str | None = None,
         default: Any = None,
         strict: bool = False,
+        timeout: int = TIMEOUT,
     ) -> Any:
         """Run one ubus call, logging in again once if the session expired.
 
@@ -168,7 +172,7 @@ class OpenWrtApi:
                 if not self._login(base):
                     raise AuthError(f"login refused by {base}")
                 session = self._sessions[base]
-            payload = self._post(base, session, obj, method, args or {})
+            payload = self._post(base, session, obj, method, args or {}, timeout)
             error = payload.get("error") if isinstance(payload, dict) else None
             result = payload.get("result") if isinstance(payload, dict) else None
             expired = isinstance(error, dict) and error.get("code") == RPC_ACCESS_DENIED
@@ -656,6 +660,10 @@ class OpenWrtApi:
             return self.base_url
         return self._node_urls[node["host"]]
 
+    def passthrough(self, node_id: str, obj: str, method: str, args: dict | None) -> Any:
+        """One call on one node, for the app's own pages. The caller checks it is allowed."""
+        return self.call(obj, method, args, base=self._base(node_id), strict=True, timeout=40)
+
     def _ordered_nodes(self) -> list[str]:
         """Satellites first, so a change that cuts the link reaches them all."""
         nodes = self.snapshot.get("nodes") or {}
@@ -798,6 +806,32 @@ class OpenWrtApi:
             base=self._base(client["node_id"]),
             strict=True,
         )
+
+    def move_client(self, mac: str, node_id: str) -> None:
+        """Send a wireless client to one node.
+
+        Every other node disconnects it and turns it away for a minute, so the
+        only access point that answers is the chosen one. Nothing is fixed for
+        good: afterwards the client is free to roam again.
+        """
+        nodes = self.snapshot.get("nodes") or {}
+        target = nodes.get(node_id)
+        if target is None or not target.get("online"):
+            raise OpenWrtError("the chosen node is not reachable")
+        address = mac_colon(mac12(mac)).lower()
+        if not address:
+            raise OpenWrtError("not a hardware address")
+        for other_id, node in nodes.items():
+            if other_id == node_id or not node.get("online"):
+                continue
+            base = self._base(other_id)
+            for radio in (node.get("radios") or {}).values():
+                if radio.get("ifname"):
+                    self.call(
+                        f"hostapd.{radio['ifname']}", "del_client",
+                        {"addr": address, "reason": 5, "deauth": True, "ban_time": MOVE_BAN * 1000},
+                        base=base,
+                    )
 
     def set_leds(self, node_id: str, enabled: bool) -> None:
         base = self._base(node_id)

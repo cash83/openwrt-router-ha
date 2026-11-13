@@ -26,6 +26,8 @@ through `usteer` and use the same login.
   to get a notification on the phone.
 - **Data used** by each device since it joined its node (the counters restart when it
   reconnects or changes node).
+- **Send a device to a node**: from its card, "connect to" another node. The other nodes
+  turn it away for a minute, so it joins the chosen one; afterwards it is free to roam.
 - **Services** `openwrt_router.kick_client` and `openwrt_router.block_client`.
 - **A page in the sidebar** ("Wi-Fi") designed for a phone: state of the network, the
   nodes, the Wi-Fi settings and the list of devices with quick actions. It loads nothing
@@ -77,8 +79,14 @@ The ready-made APK is attached to each [release](https://github.com/cash83/openw
 It is signed with a development key, so Android asks to allow installation from the
 browser or file manager you open it with.
 
-The sliders button at the top right lists the router's own pages (status, system,
-network) and opens them inside the app; in router-only mode the saved login is typed in
-for you.
+The menu button at the top left opens the one menu of the app: the router's own
+sections (status, system, network), drawn by the app in its own style, and the
+connection. Per node you get the overview, live traffic, the system log, a scan of the
+neighbouring channels, processes, routes, the services, scheduled commands, interfaces,
+DHCP with static addresses (add, edit, remove), port forwards (add, switch off, remove),
+ping / traceroute / name lookup, and the roaming view. Through Home Assistant these
+readings are relayed by the integration, and only the ones listed in `passthrough.py`:
+nothing that returns a password, no command with free arguments. The router's web
+interface is still one tap away for the rest (router password, backup, firmware).
 
 Build it yourself (JDK 17, Gradle 8.7, Android SDK 35): `gradle assembleDebug` in `android`.

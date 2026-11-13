@@ -48,6 +48,9 @@
 				"/proc/stat": [
 					"read"
 				],
+				"/etc/apk/world": [
+					"read"
+				],
 				"/sbin/ip -4 neigh show": [
 					"exec"
 				],

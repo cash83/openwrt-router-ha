@@ -84,7 +84,7 @@
   const haSignIn = (address, user, password, flow, code) =>
     ask((id) => native.haSignIn(id, address, user, password, flow || "", code || ""), 40000)
       .then((value) => value || { error: "unreachable" });
-  const http = (url, body) => ask((id) => native.http(id, url, JSON.stringify(body)), 20000)
+  const http = (url, body) => ask((id) => native.http(id, url, JSON.stringify(body)), 32000)
     .then((value) => value || { status: 0, json: null });
 
   // ---- Home Assistant
@@ -301,6 +301,8 @@
 
   function showSetup(message) {
     stop();
+    window.RouterPages.close();
+    closeDrawer();
     $("app").style.display = "none";
     $("setup").classList.add("show");
     $("home").value = config.home || "";
@@ -328,9 +330,7 @@
     if (!panel) {
       panel = document.createElement("openwrt-router-panel");
       panel.narrow = true;
-      panel.addEventListener("hass-toggle-menu", openMenu);
-      panel.addEventListener("openwrt-router-menu", (event) => openDrawer(event.detail.nodes));
-      panel.routerMenu = true;
+      panel.addEventListener("hass-toggle-menu", openDrawer);
       $("app").appendChild(panel);
     }
     panel.hass = hass;
@@ -402,52 +402,18 @@
     error.classList.add("show");
   }
 
-  function openMenu() {
-    $("mUrl").textContent = connectedUrl || "—";
-    $("mRemote").textContent = mode === "router"
-      ? "serve una VPN verso casa"
-      : [clean(config.remote), remoteNote].filter(Boolean).join(" · ") || "—";
-    $("mVersionLabel").textContent = mode === "router" ? "Router" : "Sistema";
-    $("mVersion").textContent = version || "—";
-    $("mApp").textContent = native.version();
-    $("menu").classList.add("show");
+  // ---- the one menu, on the left: the router's sections and the connection
+
+  /** One ubus call on one node, straight to the router or through Home Assistant. */
+  function rpc(node, object, method, args) {
+    if (!ready) return Promise.reject(new Error("non collegato"));
+    if (mode === "router") {
+      return router.call(object, method, args || {}, { base: router.baseOf(node.id), strict: true });
+    }
+    return hass.callWS({ type: "openwrt_router/ubus", node: node.id, object, method, args: args || {} })
+      .then((reply) => reply.result);
   }
 
-  const closeMenu = () => $("menu").classList.remove("show");
-
-  // ---- the router's own pages, the way its web interface groups them
-
-  const ROUTER_PAGES = [
-    ["Stato", [
-      ["Panoramica", "admin/status/overview"],
-      ["Grafici in tempo reale", "admin/status/realtime"],
-      ["Registro di sistema", "admin/status/logs"],
-      ["Analisi dei canali", "admin/status/channel_analysis"],
-      ["Processi", "admin/status/processes"],
-      ["Instradamento", "admin/status/routes"],
-      ["Firewall", "admin/status/nftables"],
-    ]],
-    ["Sistema", [
-      ["Sistema", "admin/system/system"],
-      ["Amministrazione", "admin/system/admin"],
-      ["Software", "admin/system/package-manager"],
-      ["Avvio", "admin/system/startup"],
-      ["Operazioni pianificate", "admin/system/crontab"],
-      ["Configurazione LED", "admin/system/leds"],
-      ["Backup e aggiornamento firmware", "admin/system/flash"],
-      ["Aggiornamento assistito", "admin/system/attendedsysupgrade"],
-      ["Riavvia", "admin/system/reboot"],
-    ]],
-    ["Rete", [
-      ["Interfacce", "admin/network/network"],
-      ["Wireless", "admin/network/wireless"],
-      ["DHCP e DNS", "admin/network/dhcp"],
-      ["Firewall", "admin/network/firewall"],
-      ["Instradamento", "admin/network/routes"],
-      ["Diagnostica", "admin/network/diagnostics"],
-      ["Usteer", "admin/network/usteer"],
-    ]],
-  ];
   let drawerNodes = [];
   let drawerNode = null;
 
@@ -461,36 +427,48 @@
       pill.addEventListener("click", () => { drawerNode = node; paintDrawer(); });
       nodes.appendChild(pill);
     });
-    $("dNote").textContent = mode === "router"
-      ? "Si aprono le pagine del router, con l'accesso già fatto."
-      : "Si aprono le pagine del router: serve essere sul Wi-Fi di casa o con una VPN, e la password del router.";
+    if (!drawerNodes.length) nodes.textContent = "Nessun router raggiungibile in questo momento.";
     const links = $("dLinks");
     links.textContent = "";
-    ROUTER_PAGES.forEach(([group, pages]) => {
+    window.RouterPages.groups.forEach(([group, pages]) => {
       const title = document.createElement("h3");
       title.textContent = group;
       links.appendChild(title);
-      pages.forEach(([label, path]) => {
+      pages.forEach(([key, label]) => {
         const button = document.createElement("button");
         button.textContent = label;
         button.addEventListener("click", () => {
-          if (!drawerNode) return;
+          const node = drawerNode;
+          if (!node) return;
           closeDrawer();
-          native.openRouter("http://" + drawerNode.host + "/cgi-bin/luci/" + path, drawerNode.name + " · " + label);
+          window.RouterPages.open(key, {
+            node,
+            rpc: (object, method, args) => rpc(node, object, method, args),
+            action: (message) => hass.callWS(message).then((reply) => { if (panel && panel._load) panel._load(true); return reply; }),
+          });
         });
         links.appendChild(button);
       });
     });
+    $("mUrl").textContent = connectedUrl || "—";
+    $("mRemote").textContent = mode === "router"
+      ? "serve una VPN verso casa"
+      : [clean(config.remote), remoteNote].filter(Boolean).join(" · ") || "—";
+    $("mVersionLabel").textContent = mode === "router" ? "Router" : "Sistema";
+    $("mVersion").textContent = version || "—";
+    $("mApp").textContent = native.version();
   }
 
-  function openDrawer(nodes) {
-    drawerNodes = (nodes || []).filter((node) => node.online);
-    drawerNode = drawerNodes.find((node) => drawerNode && node.id === drawerNode.id) || drawerNodes[0] || null;
+  function openDrawer() {
+    const all = panel && panel.data ? Object.values(panel.data.nodes) : [];
+    drawerNodes = all.filter((node) => node.online);
+    drawerNode = drawerNodes.find((node) => drawerNode && node.id === drawerNode.id)
+      || drawerNodes.find((node) => node.is_main) || drawerNodes[0] || null;
     paintDrawer();
     $("drawer").classList.add("show");
   }
 
-  const closeDrawer = () => $("drawer").classList.remove("show");
+  function closeDrawer() { $("drawer").classList.remove("show"); }
 
   $("connect").addEventListener("click", submit);
   $("tabHa").addEventListener("click", () => { mode = "ha"; paint(); });
@@ -513,13 +491,17 @@
       eye.setAttribute("aria-pressed", "false");
     });
   }
-  $("mClose").addEventListener("click", closeMenu);
   $("dClose").addEventListener("click", closeDrawer);
+  $("dHome").addEventListener("click", closeDrawer);
   $("drawer").addEventListener("click", (event) => { if (event.target.id === "drawer") closeDrawer(); });
-  $("menu").addEventListener("click", (event) => { if (event.target.id === "menu") closeMenu(); });
-  $("mEdit").addEventListener("click", () => { closeMenu(); showSetup(""); });
+  $("dWeb").addEventListener("click", () => {
+    if (!drawerNode) return;
+    closeDrawer();
+    native.openRouter("http://" + drawerNode.host + "/cgi-bin/luci/", drawerNode.name + " · interfaccia web");
+  });
+  $("mEdit").addEventListener("click", () => { closeDrawer(); showSetup(""); });
   $("mForget").addEventListener("click", () => {
-    closeMenu();
+    closeDrawer();
     stop();
     native.signOut();
     config = {};
@@ -530,7 +512,7 @@
   // Hooks the Android side calls.
   window.appBack = () => {
     if ($("drawer").classList.contains("show")) { closeDrawer(); return true; }
-    if ($("menu").classList.contains("show")) { closeMenu(); return true; }
+    if (window.RouterPages.back()) return true;
     const root = panel && panel.shadowRoot;
     const veil = root && root.getElementById("veil");
     if (veil && veil.classList.contains("open")) { panel._close(); return true; }

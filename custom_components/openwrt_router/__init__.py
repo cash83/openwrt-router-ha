@@ -32,6 +32,7 @@ from .const import (
     SERVICE_KICK,
 )
 from .coordinator import OpenWrtCoordinator
+from .passthrough import allowed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,6 +167,7 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
 
     websocket_api.async_register_command(hass, ws_snapshot)
     websocket_api.async_register_command(hass, ws_action)
+    websocket_api.async_register_command(hass, ws_ubus)
 
     await hass.http.async_register_static_paths(
         [StaticPathConfig(PANEL_STATIC_URL, str(Path(__file__).parent / PANEL_FILE), False)]
@@ -247,7 +249,7 @@ def ws_snapshot(
     {
         vol.Required("type"): f"{DOMAIN}/action",
         vol.Required("action"): vol.In(
-            ["refresh", "reboot", "leds", "radio", "restart_radio", "kick", "block"]
+            ["refresh", "reboot", "leds", "radio", "restart_radio", "kick", "block", "move"]
         ),
         vol.Optional("entry_id"): str,
         vol.Optional("node"): vol.Any(str, None),
@@ -282,9 +284,43 @@ async def ws_action(
             await coordinator.async_run(api.restart_radio, msg["node"], msg["band"])
         elif action == "kick":
             await coordinator.async_run(api.kick_client, msg["mac"], msg.get("ban_seconds", 0))
+        elif action == "move":
+            await coordinator.async_run(api.move_client, msg["mac"], msg["node"])
         elif action == "block":
             await coordinator.async_run(api.block_client, msg["mac"], bool(msg["value"]))
     except (HomeAssistantError, KeyError) as err:
         connection.send_error(msg["id"], "failed", str(err))
         return
     connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/ubus",
+        vol.Required("node"): str,
+        vol.Required("object"): str,
+        vol.Required("method"): str,
+        vol.Optional("args"): dict,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_ubus(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """One router call for the app's own pages (see passthrough.py for which)."""
+    if not allowed(msg["object"], msg["method"], msg.get("args")):
+        connection.send_error(
+            msg["id"], "not_allowed", f"{msg['object']}.{msg['method']} is not available here"
+        )
+        return
+    try:
+        coordinator = _pick(hass, msg.get("entry_id"))
+        result = await hass.async_add_executor_job(
+            coordinator.api.passthrough, msg["node"], msg["object"], msg["method"], msg.get("args")
+        )
+    except Exception as err:  # noqa: BLE001 - shown to the user as is
+        connection.send_error(msg["id"], "failed", str(err))
+        return
+    connection.send_result(msg["id"], {"result": result})

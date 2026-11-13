@@ -284,7 +284,7 @@ def test_expired_session_logs_in_again(monkeypatch) -> None:
     router = api.OpenWrtApi(MAIN, "root", "secret")
     seen: list[str] = []
 
-    def post(base, session, obj, method, args):  # noqa: ANN001
+    def post(base, session, obj, method, args, timeout=None):  # noqa: ANN001
         seen.append(f"{session[:3]}:{obj}.{method}")
         if obj == "session":
             return {"result": [0, {"ubus_rpc_session": "new" + "0" * 29}]}
@@ -304,3 +304,28 @@ def test_refused_login_is_reported_as_such(monkeypatch) -> None:
     assert router.authenticate() is False
     with pytest.raises(api.AuthError):
         router.call("system", "board")
+
+
+def test_moving_a_client_makes_every_other_node_turn_it_away(monkeypatch: pytest.MonkeyPatch) -> None:
+    router = api.OpenWrtApi(MAIN, "root", "secret")
+    router._node_urls = {"192.168.50.2": NODE}
+    router.snapshot = {
+        "nodes": {
+            MAIN_ID: {"is_main": True, "online": True, "host": "192.168.50.1",
+                      "radios": {"2g": {"ifname": "phy0-ap0"}, "5g": {"ifname": "phy1-ap0"}}},
+            NODE_ID: {"is_main": False, "online": True, "host": "192.168.50.2",
+                      "radios": {"2g": {"ifname": "phy0-ap0"}, "5g": {"ifname": None}}},
+        }
+    }
+    seen: list[tuple] = []
+    monkeypatch.setattr(
+        router, "call",
+        lambda obj, method, args=None, **kw: seen.append((kw.get("base"), obj, method, args["addr"], args["ban_time"])),
+    )
+    router.move_client("AA-BB-CC-00-11-22", NODE_ID)
+    assert seen == [
+        (MAIN, "hostapd.phy0-ap0", "del_client", "aa:bb:cc:00:11:22", 60000),
+        (MAIN, "hostapd.phy1-ap0", "del_client", "aa:bb:cc:00:11:22", 60000),
+    ]
+    with pytest.raises(api.OpenWrtError):
+        router.move_client("AA-BB-CC-00-11-22", "nobody")

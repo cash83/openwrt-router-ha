@@ -22,6 +22,7 @@ const TEXT = {
     askWifiOff: "Spegnere la rete {name} su tutti i nodi? I dispositivi che la usano si scollegano.",
     askWifiChange: "Cambiare {what} della rete {name}? Il Wi-Fi di quella banda si interrompe per circa mezzo minuto.",
     askKick: "Scollegare {name}? Si ricollega da solo al nodo che sente meglio.",
+    moveTo: "Collega a {node}", askMove: "Spostare {name} su {node}? Per un minuto gli altri nodi lo rifiutano, così si aggancia lì. Se da lì non prende, torna dove era.",
     working: "Sto applicando…", done: "Fatto", failed: "Non riuscito: ",
     updated: "Aggiornato {n} s fa", noData: "Il router non risponde.", weak: "debole",
     fair: "discreto", good: "buono", excellent: "ottimo", excellentLink: "ottimo",
@@ -46,6 +47,7 @@ const TEXT = {
     askWifiOff: "Turn off {name} on every node? Devices using it will disconnect.",
     askWifiChange: "Change the {what} of {name}? That band drops for about half a minute.",
     askKick: "Disconnect {name}? It rejoins by itself on the node it hears best.",
+    moveTo: "Connect to {node}", askMove: "Move {name} to {node}? For one minute the other nodes turn it away, so it joins there. If it cannot hear that node it comes back.",
     working: "Applying…", done: "Done", failed: "Failed: ",
     updated: "Updated {n} s ago", noData: "The router does not answer.", weak: "weak",
     fair: "fair", good: "good", excellent: "excellent", excellentLink: "excellent",
@@ -498,6 +500,8 @@ class OpenWrtRouterPanel extends HTMLElement {
       </dl>
       <div class="field"><label>${esc(t.internet)}${c.blocked ? `<small>${esc(t.blocked)}</small>` : ""}</label>
         <button class="toggle ${c.blocked ? "" : "on"}" data-do="block" data-mac="${esc(c.mac)}" data-value="${c.blocked ? "" : "1"}" aria-pressed="${!c.blocked}"></button></div>
+      ${c.band === "wired" ? "" : Object.values(this.data.nodes).filter((n) => n.online && n.id !== c.node_id).map((n) =>
+        `<button class="btn ghost" data-do="move" data-mac="${esc(c.mac)}" data-name="${esc(c.name)}" data-node="${esc(n.id)}" data-nodename="${esc(n.name)}">${esc(t.moveTo.replace("{node}", n.name))}</button>`).join("")}
       ${c.band === "wired" ? "" : `<button class="btn ghost" data-do="kick" data-mac="${esc(c.mac)}" data-name="${esc(c.name)}">${esc(t.kick)}</button>`}
       <button class="btn ghost" data-do="close">${esc(t.close)}</button>`);
   }
@@ -536,6 +540,7 @@ class OpenWrtRouterPanel extends HTMLElement {
       case "leds": return this._act({ action: "leds", node: d.node, value: on });
       case "reboot": return this._ask(t.askReboot.replace("{name}", d.name), { action: "reboot", node: d.node }, true);
       case "block": return this._act({ action: "block", mac: d.mac, value: on });
+      case "move": return this._ask(t.askMove.replace("{name}", d.name).replace(/\{node\}/g, d.nodename), { action: "move", mac: d.mac, node: d.node });
       case "kick": return this._ask(t.askKick.replace("{name}", d.name), { action: "kick", mac: d.mac });
       case "radio": {
         const message = { action: "radio", node: null, band: d.band, setting: d.setting, value: on };
