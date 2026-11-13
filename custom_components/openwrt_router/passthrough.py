@@ -17,7 +17,7 @@ UBUS = {
     "network.interface": {"dump"},
     "network.device": {"status"},
     "luci-rpc": {"getDHCPLeases", "getHostHints", "getNetworkDevices"},
-    "luci": {"getProcessList", "getMountPoints", "getUnixtime"},
+    "luci": {"getProcessList", "getMountPoints", "getUnixtime", "getTimezones"},
     "iwinfo": {"scan", "info"},
     "usteer": {"local_info", "remote_info", "get_clients"},
     "rc": {"list", "init"},
@@ -31,8 +31,10 @@ READABLE = WRITABLE | {"/etc/apk/world"}
 
 _HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:_-]{0,252}$")
 _NAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_PACKAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._-]{0,80}$")
 
-# command -> fixed arguments; "<host>" stands for one host name or address.
+# command -> fixed arguments; "<host>" stands for one host name or address,
+# "<package>" for one package name.
 COMMANDS = {
     "/usr/libexec/syslog-wrapper": [[]],
     "/bin/dmesg": [["-r"]],
@@ -40,6 +42,10 @@ COMMANDS = {
     "/bin/ping": [["-c", "4", "-W", "2", "<host>"]],
     "/bin/traceroute": [["-m", "12", "-q", "1", "-w", "1", "-n", "<host>"]],
     "/usr/bin/nslookup": [["<host>"]],
+    "/usr/bin/apk": [["search", "<package>"]],
+    "/usr/libexec/package-manager-call": [
+        ["update"], ["install", "<package>"], ["remove", "<package>"],
+    ],
 }
 
 
@@ -54,7 +60,9 @@ def _command_allowed(command: Any, params: Any) -> bool:
         if len(shape) != len(params):
             continue
         if all(
-            bool(_HOST.match(given)) if wanted == "<host>" else given == wanted
+            bool(_HOST.match(given)) if wanted == "<host>"
+            else bool(_PACKAGE.match(given)) if wanted == "<package>"
+            else given == wanted
             for wanted, given in zip(shape, params)
         ):
             return True

@@ -87,6 +87,11 @@ DHCP with static addresses (add, edit, remove), port forwards (add, switch off, 
 ping / traceroute / name lookup, and the roaming view. Through Home Assistant these
 readings are relayed by the integration, and only the ones listed in `passthrough.py`:
 nothing that returns a password, no command with free arguments. The router's web
-interface is still one tap away for the rest (router password, backup, firmware).
+interface is still one tap away for the rest (backup, firmware).
+
+From the same pages you can also change things: search the package catalogue, install
+and remove packages; the Wi-Fi name and password (on every node); the DHCP range, lease
+time and the DNS handed to devices; the time zone; and, in router-only mode, the
+router's own password (on every node, the app remembers the new one).
 
 Build it yourself (JDK 17, Gradle 8.7, Android SDK 35): `gradle assembleDebug` in `android`.

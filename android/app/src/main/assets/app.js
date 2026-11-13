@@ -84,7 +84,7 @@
   const haSignIn = (address, user, password, flow, code) =>
     ask((id) => native.haSignIn(id, address, user, password, flow || "", code || ""), 40000)
       .then((value) => value || { error: "unreachable" });
-  const http = (url, body) => ask((id) => native.http(id, url, JSON.stringify(body)), 32000)
+  const http = (url, body) => ask((id) => native.http(id, url, JSON.stringify(body)), 38000)
     .then((value) => value || { status: 0, json: null });
 
   // ---- Home Assistant
@@ -443,7 +443,15 @@
           closeDrawer();
           window.RouterPages.open(key, {
             node,
+            direct: mode === "router",
+            user: config.routerUser || "root",
+            nodes: drawerNodes.slice(),
             rpc: (object, method, args) => rpc(node, object, method, args),
+            rpcOn: (other, object, method, args) => rpc(other, object, method, args),
+            passwordChanged: (password) => {
+              native.saveRouter(config.routerHost, config.routerUser || "root", password);
+              if (router) router.password = password;
+            },
             action: (message) => hass.callWS(message).then((reply) => { if (panel && panel._load) panel._load(true); return reply; }),
           });
         });

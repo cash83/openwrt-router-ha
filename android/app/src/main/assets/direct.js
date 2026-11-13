@@ -505,6 +505,14 @@
         if (family === "HT" && !["20", "40"].includes(next)) family = "VHT";
         await set(radio.radio, { htmode: family + next });
       } else if (setting === "channel") await set(radio.radio, { channel: String(value) });
+      else if (setting === "ssid") {
+        const name = String(value).trim();
+        if (!name || new TextEncoder().encode(name).length > 32) throw new Error("il nome della rete va da 1 a 32 caratteri");
+        await set(radio.section, { ssid: name });
+      } else if (setting === "key") {
+        if (String(value).length < 8 || String(value).length > 63) throw new Error("la password del Wi-Fi va da 8 a 63 caratteri");
+        await set(radio.section, { key: String(value) });
+      }
       else if (setting === "tx_power") {
         if (!(value in POWER)) throw new Error("potenza sconosciuta");
         if (value === "max") {

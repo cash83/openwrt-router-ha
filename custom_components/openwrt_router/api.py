@@ -47,7 +47,9 @@ PREFIX_MODE = {"HT": "n", "VHT": "ac", "HE": "ax", "EHT": "ax"}
 TX_POWER_OPTIONS = {"max": "Maximum", "medium": "Medium", "low": "Low"}
 TX_POWER_BACKOFF = {"max": 0, "medium": 3, "low": 7}
 
-RADIO_SETTINGS = ("enabled", "hidden", "isolate", "mode", "width", "channel", "tx_power")
+RADIO_SETTINGS = (
+    "enabled", "hidden", "isolate", "mode", "width", "channel", "tx_power", "ssid", "key",
+)
 
 
 class OpenWrtError(Exception):
@@ -737,6 +739,15 @@ class OpenWrtApi:
             uci_set(radio["radio"], {"htmode": f"{family}{new_width}"})
         elif setting == "channel":
             uci_set(radio["radio"], {"channel": str(value)})
+        elif setting == "ssid":
+            name = str(value).strip()
+            if not 1 <= len(name.encode()) <= 32:
+                raise OpenWrtError("the network name must be 1 to 32 characters long")
+            uci_set(radio["section"], {"ssid": name})
+        elif setting == "key":
+            if not 8 <= len(str(value)) <= 63:
+                raise OpenWrtError("the Wi-Fi password must be 8 to 63 characters long")
+            uci_set(radio["section"], {"key": str(value)})
         elif setting == "tx_power":
             if value not in TX_POWER_BACKOFF:
                 raise OpenWrtError(f"unknown power level {value}")

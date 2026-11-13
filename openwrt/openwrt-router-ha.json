@@ -54,6 +54,9 @@
 				"/sbin/ip -4 neigh show": [
 					"exec"
 				],
+				"/usr/bin/apk search *": [
+					"exec"
+				],
 				"/bin/uclient-fetch -q -T 5 -O - https://api.ipify.org": [
 					"exec"
 				]

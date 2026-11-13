@@ -19,13 +19,15 @@
     ]],
     ["Sistema", [
       ["system", "Sistema"],
-      ["software", "Software installato"],
+      ["software", "Software"],
       ["startup", "Avvio e servizi"],
+      ["password", "Password del router"],
       ["cron", "Operazioni pianificate"],
       ["reboot", "Riavvia"],
     ]],
     ["Rete", [
       ["interfaces", "Interfacce"],
+      ["wifi", "Wi-Fi: nome e password"],
       ["dhcp", "DHCP e DNS"],
       ["firewall", "Firewall e porte"],
       ["diag", "Diagnostica"],
@@ -118,7 +120,7 @@
     for (const field of spec.fields || []) {
       const control = field.options
         ? h("select", null, field.options.map(([value, label]) => h("option", { value }, label)))
-        : h("input", { type: "text", inputmode: field.mode || "text", placeholder: field.placeholder || "", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+        : h("input", { type: field.secret ? "password" : "text", inputmode: field.mode || "text", placeholder: field.placeholder || "", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
       control.value = field.value == null ? "" : field.value;
       inputs[field.key] = control;
       body.append(h("label", null, field.label), control);
@@ -134,7 +136,7 @@
     ok.classList.toggle("danger", Boolean(spec.danger));
     ok.onclick = () => {
       const values = {};
-      for (const [key, control] of Object.entries(inputs)) values[key] = control.value.trim();
+      for (const [key, control] of Object.entries(inputs)) values[key] = control.type === "password" ? control.value : control.value.trim();
       const problem = spec.check ? spec.check(values) : "";
       if (problem) { error.textContent = problem; error.classList.add("show"); return; }
       closeAsk(spec.fields ? values : true);
@@ -450,33 +452,111 @@
           await c.rpc("uci", "commit", { config: "system" });
           await c.rpc("rc", "init", { name: "system", action: "reload" });
         }, "Nome cambiato");
+      }, "ghost"),
+      button("Cambia fuso orario", async () => {
+        let zones;
+        try { zones = (await c.rpc("luci", "getTimezones")) || {}; } catch (error) { toast(explain(error)); return; }
+        const answer = await ask({
+          title: "Fuso orario", ok: "Salva",
+          fields: [{ key: "zone", label: "Zona", value: system.zonename || "UTC",
+            options: Object.keys(zones).sort().map((zone) => [zone, zone.replace(/_/g, " ")]) }],
+        });
+        if (!answer || !system.id || !zones[answer.zone]) return;
+        change(async () => {
+          await c.rpc("uci", "set", { config: "system", section: system.id,
+            values: { zonename: answer.zone, timezone: zones[answer.zone].tzstring } });
+          await c.rpc("uci", "commit", { config: "system" });
+          await c.rpc("rc", "init", { name: "system", action: "reload" });
+        }, "Fuso orario cambiato");
       }, "ghost")));
     out.append(...card("Orologio di rete (NTP)",
       rows([["Sincronizzazione", ntp.enabled === "0" ? "spenta" : "accesa"]]),
       list(ntp.server).map((server) => item(server))));
-    out.append(note("Password del router, chiavi SSH, backup e aggiornamento del firmware si fanno dall'interfaccia web del router (in fondo al menu)."));
+    out.append(note("Backup e aggiornamento del firmware restano nell'interfaccia web del router (in fondo al menu)."));
   };
 
   PAGES.software = async (c, out) => {
     const reply = (await c.rpc("file", "read", { path: "/etc/apk/world" })) || {};
-    const packages = String(reply.data || "").split("\n").map((l) => l.trim()).filter(Boolean)
-      .map((line) => { const m = /^([^=<>~]+)[=<>~]*(.*)$/.exec(line); return [m[1], m[2]]; })
-      .sort((a, b) => a[0].localeCompare(b[0]));
-    const filter = h("input", { type: "search", placeholder: "Cerca un pacchetto", autocomplete: "off", autocapitalize: "off" });
-    const box = h("div");
-    const count = h("p", { class: "pnote" });
-    const paint = () => {
-      const needle = filter.value.trim().toLowerCase();
-      const shown = needle ? packages.filter((p) => p[0].toLowerCase().includes(needle)) : packages;
-      box.textContent = "";
-      shown.slice(0, 300).forEach(([name, version]) => box.append(item(name, null, version)));
-      if (!shown.length) box.append(empty("Nessun pacchetto con questo nome."));
-      count.textContent = `${shown.length} pacchetti su ${packages.length}.`;
+    const installed = String(reply.data || "").split("\n").map((l) => l.trim()).filter(Boolean)
+      .map((line) => /^([^=<>~]+)/.exec(line)[1]).sort((a, b) => a.localeCompare(b));
+    const has = new Set(installed);
+    const MANAGER = "/usr/libexec/package-manager-call";
+    const search = h("input", { type: "search", placeholder: "Nome del pacchetto, per esempio nlbwmon", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+    const found = h("div");
+    const mine = h("div");
+    const count = h("h3", { class: "sec" });
+    const output = h("pre", { class: "out" });
+    const outputCard = h("div", { class: "pcard" }, output);
+    outputCard.hidden = true;
+    let working = false;
+
+    /** Run the package manager and show what it said. */
+    const manage = async (label, params) => {
+      if (working) return false;
+      working = true;
+      outputCard.hidden = false;
+      output.textContent = label + "… può volerci un minuto.";
+      outputCard.scrollIntoView({ block: "nearest" });
+      let ok = false;
+      try {
+        const raw = await exec(c, MANAGER, params);
+        let result = {};
+        try { result = JSON.parse(raw.text); } catch (error) { result = { code: raw.code, stdout: raw.text, stderr: raw.error }; }
+        ok = !result.code;
+        output.textContent = (ok ? "Riuscito.\n" : "Non riuscito.\n") + [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      } catch (error) { output.textContent = explain(error); }
+      working = false;
+      return ok;
     };
-    filter.addEventListener("input", paint);
-    paint();
-    out.append(filter, count, h("div", { class: "pcard" }, box),
-      note("Per installare o togliere pacchetti si usa l'interfaccia web del router (in fondo al menu)."));
+    const paintMine = () => {
+      const needle = search.value.trim().toLowerCase();
+      const shown = needle ? installed.filter((name) => name.toLowerCase().includes(needle)) : installed;
+      count.textContent = `Installati (${shown.length} di ${installed.length})`;
+      mine.textContent = "";
+      shown.forEach((name) => mine.append(item(name, null, "›", async () => {
+        const sure = await ask({ title: "Rimuovere " + name + "?", ok: "Rimuovi", danger: true,
+          text: "Togliere un pacchetto di base può lasciare il router senza rete o senza interfaccia. Rimuovi solo quello che hai installato tu." });
+        if (!sure) return;
+        if (await manage("Rimuovo " + name, ["remove", name])) {
+          installed.splice(installed.indexOf(name), 1); has.delete(name); paintMine();
+        }
+      })));
+      if (!shown.length) mine.append(empty("Nessun pacchetto installato con questo nome."));
+    };
+    const lookUp = async () => {
+      const term = search.value.trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9+._-]{0,80}$/.test(term)) { toast("Scrivi il nome, o una parte, senza spazi."); return; }
+      found.textContent = "";
+      found.append(h("div", { class: "wait small" }, h("i"), "Cerco nel catalogo…"));
+      try {
+        let lines = (await exec(c, "/usr/bin/apk", ["search", term])).text.split("\n").filter((l) => l.trim());
+        if (!lines.length && await manage("Aggiorno il catalogo", ["update"])) {
+          lines = (await exec(c, "/usr/bin/apk", ["search", term])).text.split("\n").filter((l) => l.trim());
+        }
+        const packages = lines.map((line) => { const m = /^(.+?)-(\d[^-]*(?:-r\d+)?)$/.exec(line.trim()); return m ? [m[1], m[2]] : [line.trim(), ""]; })
+          .filter(([name]) => !/^luci-i18n-/.test(name) || /-it$/.test(name)).slice(0, 80);
+        found.textContent = "";
+        packages.forEach(([name, version]) => found.append(item(name, version, has.has(name) ? "installato" : "Installa", has.has(name) ? null : async () => {
+          const sure = await ask({ title: "Installare " + name + "?", text: "Versione " + version + ". Vengono installati anche i pacchetti da cui dipende.", ok: "Installa" });
+          if (!sure) return;
+          if (await manage("Installo " + name, ["install", name])) {
+            installed.push(name); installed.sort((a, b) => a.localeCompare(b)); has.add(name); paintMine(); lookUp();
+          }
+        })));
+        if (!packages.length) found.append(empty("Nessun pacchetto con questo nome nel catalogo."));
+      } catch (error) {
+        found.textContent = "";
+        found.append(h("p", { class: "bad" }, explain(error)));
+      }
+    };
+    search.addEventListener("input", paintMine);
+    search.addEventListener("keydown", (event) => { if (event.key === "Enter") lookUp(); });
+    paintMine();
+    out.append(...card("Cerca e installa", search,
+      h("div", { class: "duo2" }, button("Cerca nel catalogo", lookUp), button("Aggiorna catalogo", () => manage("Aggiorno il catalogo", ["update"]), "ghost")),
+      found));
+    out.append(outputCard, count, h("div", { class: "pcard" }, mine),
+      note("Mentre scrivi, l'elenco qui sopra mostra i pacchetti già installati con quel nome. Tocca un pacchetto installato per rimuoverlo."));
   };
 
   PAGES.startup = async (c, out) => {
@@ -526,6 +606,72 @@
           close();
         } catch (error) { toast(explain(error)); }
       }, "danger")));
+  };
+
+  PAGES.password = async (c, out) => {
+    if (!c.direct) {
+      out.append(...card("Password del router", note("Con il collegamento tramite Home Assistant la password del router non si cambia da qui, perché l'integrazione perderebbe l'accesso. Dal menu scegli «Cambia collegamento», entra con «Solo router», cambiala lì, e poi aggiorna l'accesso dell'integrazione in Home Assistant.")));
+      return;
+    }
+    const nodes = c.nodes.filter((n) => !n.is_main).concat(c.nodes.filter((n) => n.is_main));
+    out.append(...card("Password del router",
+      rows([["Utente", c.user], ["Nodi", nodes.map((n) => n.name).join(", ")]]),
+      button("Cambia password", async () => {
+        const v = await ask({
+          title: "Nuova password del router", ok: "Cambia", danger: true,
+          text: "Vale per l'app, per l'interfaccia web e per SSH. Viene cambiata su tutti i nodi, perché l'app usa la stessa per tutti.",
+          fields: [{ key: "first", label: "Nuova password", secret: true }, { key: "again", label: "Ripetila", secret: true }],
+          check: (x) => (x.first.length < 8 ? "Almeno 8 caratteri." : x.first !== x.again ? "Le due password non sono uguali." : ""),
+        });
+        if (!v) return;
+        const done = [];
+        try {
+          for (const node of nodes) {
+            const reply = await c.rpcOn(node, "luci", "setPassword", { username: c.user, password: v.first });
+            if (!reply || reply.result !== true) throw new Error("rifiutata da " + node.name);
+            done.push(node.name);
+          }
+          c.passwordChanged(v.first);
+          toast("Password cambiata su " + done.join(", "));
+        } catch (error) {
+          toast(done.length ? `Cambiata solo su ${done.join(", ")}: ${explain(error)}` : explain(error));
+        }
+      }, "danger")));
+    out.append(note("L'app ricorda da sola la nuova password. Se usi anche Home Assistant, dopo il cambio aggiorna l'accesso dell'integrazione OpenWrt Router."));
+  };
+
+  PAGES.wifi = async (c, out) => {
+    const radios = Object.entries(c.node.radios || {});
+    const NAMES = { "2g": "2,4 GHz", "5g": "5 GHz", "6g": "6 GHz" };
+    if (!radios.length) { out.append(...card(null, empty("Questo nodo non ha radio Wi-Fi."))); return; }
+    const WARNING = "Tutti i dispositivi di questa rete si scollegano e vanno collegati di nuovo: telefoni, telecamere, prese, lampadine. Se questo telefono è su questa rete, perde il collegamento anche lui.";
+    const send = async (band, radio, setting, value, done) => {
+      $("pRefresh").classList.add("spin");
+      toast("Applico su tutti i nodi, ci vuole circa mezzo minuto…");
+      try {
+        await c.action({ type: "openwrt_router/action", action: "radio", node: null, band, setting, value });
+        if (setting === "ssid") radio.ssid = value;
+        toast(done);
+      } catch (error) { toast(explain(error)); }
+      if (current === "wifi") load();
+    };
+    radios.forEach(([band, radio]) => {
+      out.append(...card(`Wi-Fi ${NAMES[band] || band}`,
+        rows([["Nome della rete", radio.ssid], ["Stato", radio.enabled ? "accesa" : "spenta"]]),
+        button("Cambia nome", async () => {
+          const v = await ask({ title: "Nome della rete " + (NAMES[band] || band), ok: "Cambia", danger: true, text: WARNING,
+            fields: [{ key: "name", label: "Nuovo nome", value: radio.ssid || "" }],
+            check: (x) => (!x.name || new TextEncoder().encode(x.name).length > 32 ? "Da 1 a 32 caratteri." : "") });
+          if (v && v.name !== radio.ssid) send(band, radio, "ssid", v.name, "Nome cambiato");
+        }, "ghost"),
+        button("Cambia password", async () => {
+          const v = await ask({ title: "Password di " + (radio.ssid || "questa rete"), ok: "Cambia", danger: true, text: WARNING,
+            fields: [{ key: "first", label: "Nuova password", secret: true }, { key: "again", label: "Ripetila", secret: true }],
+            check: (x) => (x.first.length < 8 || x.first.length > 63 ? "Da 8 a 63 caratteri." : x.first !== x.again ? "Le due password non sono uguali." : "") });
+          if (v) send(band, radio, "key", v.first, "Password cambiata");
+        }, "ghost")));
+    });
+    out.append(note("Nome e password valgono per tutti i nodi. Canale, potenza e le altre impostazioni sono nella pagina principale «Wi-Fi e dispositivi»."));
   };
 
   PAGES.interfaces = async (c, out) => {
@@ -598,7 +744,31 @@
       ["DNS dato ai dispositivi", given.join(", ") || "il router stesso"],
       ["DNS usati dal router", list(dnsmasq.server).concat(upstream).join(", ") || "quelli del collegamento internet"],
       ["Dominio locale", dnsmasq.domain],
-    ])));
+    ]), pool.id ? button("Modifica", async () => {
+      const v = await ask({
+        title: "Indirizzi automatici", ok: "Salva",
+        fields: [
+          { key: "start", label: "Primo numero (ultima parte dell'indirizzo)", value: pool.start || "100", mode: "numeric" },
+          { key: "limit", label: "Quanti indirizzi", value: pool.limit || "150", mode: "numeric" },
+          { key: "lease", label: "Durata (per esempio 2h, 12h, 30m)", value: pool.leasetime || "12h" },
+          { key: "dns", label: "DNS dato ai dispositivi (vuoto = il router)", value: options.filter((o) => /^6,/.test(o)).map((o) => o.slice(2)).join(","), placeholder: "192.168.1.5, 1.1.1.1" },
+        ],
+        check: (x) => (!/^\d+$/.test(x.start) || Number(x.start) < 2 || Number(x.start) > 253 ? "Il primo numero va da 2 a 253."
+          : !/^\d+$/.test(x.limit) || Number(x.limit) < 1 || Number(x.start) + Number(x.limit) > 255 ? "Troppi indirizzi: primo numero più quantità non può superare 254."
+          : !/^\d+[smhdw]$/.test(x.lease) ? "La durata è un numero seguito da m, h o d (per esempio 12h)."
+          : x.dns.split(/[\s,]+/).filter(Boolean).some((ip) => !isIp(ip)) ? "I DNS sono indirizzi IP separati da virgola." : ""),
+      });
+      if (!v) return;
+      const dns = v.dns.split(/[\s,]+/).filter(Boolean);
+      const next = options.filter((o) => !/^6,/.test(o)).concat(dns.length ? ["6," + dns.join(",")] : []);
+      change(async () => {
+        const values = { start: v.start, limit: v.limit, leasetime: v.lease };
+        if (next.length) values.dhcp_option = next;
+        else await c.rpc("uci", "delete", { config: "dhcp", section: pool.id, options: ["dhcp_option"] }).catch(() => null);
+        await c.rpc("uci", "set", { config: "dhcp", section: pool.id, values });
+        await apply();
+      }, "Salvato");
+    }, "ghost") : null));
     out.append(...card(`IP fissi (${hosts.length})`,
       hosts.length ? hosts.map((host) => item(host.name || host.ip, `${host.ip || "—"} · ${macOf(host)}`, null, async () => {
         const answer = await ask({ title: host.name || host.ip, text: `${host.ip} · ${macOf(host)}`,
