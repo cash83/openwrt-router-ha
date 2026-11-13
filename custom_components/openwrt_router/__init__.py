@@ -72,6 +72,7 @@ def _pick(hass: HomeAssistant, entry_id: str | None) -> OpenWrtCoordinator:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api = OpenWrtApi(entry.data[CONF_HOST], entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD])
+    api.auto_rights = True
     try:
         authenticated = await hass.async_add_executor_job(api.authenticate)
     except Exception as err:  # noqa: BLE001
@@ -172,6 +173,7 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_action)
     websocket_api.async_register_command(hass, ws_ubus)
     websocket_api.async_register_command(hass, ws_backup)
+    websocket_api.async_register_command(hass, ws_restore)
 
     await hass.http.async_register_static_paths(
         [
@@ -355,3 +357,27 @@ async def ws_backup(
         connection.send_error(msg["id"], "failed", str(err))
         return
     connection.send_result(msg["id"], {"data": base64.b64encode(archive).decode()})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/restore",
+        vol.Required("node"): str,
+        vol.Required("data"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_restore(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put a configuration backup back on a node; the node restarts."""
+    try:
+        coordinator = _pick(hass, msg.get("entry_id"))
+        archive = base64.b64decode(msg["data"], validate=True)
+        await hass.async_add_executor_job(coordinator.api.restore, msg["node"], archive)
+    except Exception as err:  # noqa: BLE001 - shown to the user as is
+        connection.send_error(msg["id"], "failed", str(err))
+        return
+    connection.send_result(msg["id"], {"ok": True})

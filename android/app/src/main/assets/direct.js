@@ -50,13 +50,15 @@
   class AuthError extends Error {}
 
   class DirectRouter {
-    constructor(host, username, password, http) {
+    constructor(host, username, password, http, upload) {
       let base = String(host || "").trim().replace(/\/+$/, "");
       if (!/^https?:\/\//i.test(base)) base = "http://" + base;
       this.base = base;
       this.username = username;
       this.password = password;
       this.http = http;
+      this.upload = upload || null;
+      this.rights = new Set();
       this.sessions = new Map();
       this.cpu = new Map();
       this.bytes = new Map();
@@ -202,6 +204,7 @@
     }
 
     async node(address, base, isMain) {
+      await this.ensureRights(base);
       const board = await this.call("system", "board", {}, { base, strict: true });
       const info = (await this.call("system", "info", {}, { base })) || {};
       const radios = await this.radios(base);
@@ -555,6 +558,50 @@
       await this.call(`hostapd.${client.ifname}`, "del_client",
         { addr: client.mac.toLowerCase(), reason: 5, deauth: true, ban_time: Math.max(0, banSeconds || 0) * 1000 },
         { base: this.baseOf(client.node_id), strict: true });
+    }
+
+    // ---------------------------------------------- files on the router
+
+    /** Put an archive (base64) where the router's "restore backup" expects it. */
+    async putArchive(base, data) {
+      if (!this.upload) throw new Error("questa versione dell'app non sa caricare file");
+      await this.call("system", "board", {}, { base, strict: true });
+      const reply = await this.upload(base + "/cgi-bin/cgi-upload", this.sessions.get(base), "/tmp/backup.tar.gz", data);
+      if (!reply || reply.status !== 200 || !/size/.test(reply.text || "")) throw new Error("il router non ha accettato il file");
+    }
+
+    async unpack(base) {
+      const out = (await this.call("file", "exec",
+        { command: "/sbin/sysupgrade", params: ["--restore-backup", "/tmp/backup.tar.gz"] }, { base, strict: true })) || {};
+      if (out.code) throw new Error("ripristino non riuscito " + (out.stderr || ""));
+    }
+
+    /** Install the rights file on a router that lacks this version (see tools/make_acl.py). */
+    async ensureRights(base) {
+      const acl = window.ROUTER_ACL;
+      if (this.rights.has(base) || !acl || !this.upload) return;
+      this.rights.add(base);
+      try {
+        const access = await this.call("session", "access", { scope: "file", object: acl.mark, function: "read" }, { base });
+        if (access && access.access) return;
+        await this.putArchive(base, acl.archive);
+        await this.unpack(base);
+        await this.call("rc", "init", { name: "rpcd", action: "reload" }, { base });
+        this.sessions.delete(base);
+        await sleep(2000);
+      } catch (error) { /* the app works without it, with less */ }
+    }
+
+    /** Put a configuration backup (base64) back on a node, then restart it. */
+    async restore(nodeId, data) {
+      if (!/^H4sI/.test(data)) throw new Error("questo file non è un backup del router");
+      const base = this.baseOf(nodeId);
+      await this.putArchive(base, data);
+      const listing = (await this.call("file", "exec",
+        { command: "/bin/tar", params: ["-tzf", "/tmp/backup.tar.gz"] }, { base, strict: true })) || {};
+      if (!String(listing.stdout || "").includes("etc/config/")) throw new Error("questo file non è un backup del router");
+      await this.unpack(base);
+      await this.reboot(nodeId);
     }
 
     /** Send a client to one node: the others turn it away for a minute. */

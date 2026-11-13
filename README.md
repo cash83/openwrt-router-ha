@@ -40,13 +40,13 @@ through `usteer` and use the same login.
 
 Each router needs LuCI (`uhttpd-mod-ubus`, `rpcd`, `luci-base`) and, to list the other
 nodes, `usteer`. Reading works with the rights a LuCI login already has. Changing things
-needs a few more; install the rights file on every node:
+needs a few more, listed in `openwrt/openwrt-router-ha.json`.
 
-    scp openwrt/openwrt-router-ha.json root@ROUTER:/usr/share/rpcd/acl.d/
-    ssh root@ROUTER 'echo /usr/share/rpcd/acl.d/openwrt-router-ha.json >> /etc/sysupgrade.conf; /etc/init.d/rpcd restart'
-
-Without it the lights, the radio restart and the exact processor load are not available
-(the load average is shown instead).
+That rights file installs itself: when the integration or the app (in router-only mode)
+meets a node that lacks it, or has an older version, it hands the file to the router
+through the router's own "restore backup", which a normal login may use, and reloads
+`rpcd`. Nothing to copy by hand, also after a firmware upgrade. After changing the file
+run `python tools/make_acl.py` and raise the number in its `/openwrt-router-ha/vN` line.
 
 A radio that carries both an access point and the link between nodes does not bring the
 access point back after a plain reload. The integration restarts that radio after every
@@ -90,8 +90,9 @@ DHCP with static addresses (add, edit, remove), port forwards (add, switch off, 
 ping / traceroute / name lookup, and the roaming view. Through Home Assistant these
 readings are relayed by the integration, and only the ones listed in `passthrough.py`:
 nothing that returns a password, no command with free arguments. The router's web
-interface is still one tap away for the rest (firmware, restoring a backup).
-The configuration backup of each node is saved to the phone's Download folder.
+interface is still one tap away for the firmware upgrade.
+The configuration backup of each node is saved to the phone's Download folder, and can be
+put back from there (the node restarts).
 
 From the same pages you can also change things: search the package catalogue, install
 and remove packages; the Wi-Fi name and password (on every node); the DHCP range, lease

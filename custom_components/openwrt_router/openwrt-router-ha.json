@@ -1,0 +1,111 @@
+{
+	"openwrt-router-ha": {
+		"description": "Home Assistant OpenWrt Router integration",
+		"read": {
+			"ubus": {
+				"system": [
+					"board",
+					"info"
+				],
+				"network.interface": [
+					"dump"
+				],
+				"network.device": [
+					"status"
+				],
+				"luci-rpc": [
+					"getDHCPLeases",
+					"getHostHints",
+					"getWirelessDevices"
+				],
+				"iwinfo": [
+					"assoclist",
+					"freqlist",
+					"txpowerlist",
+					"info"
+				],
+				"luci": [
+					"getLEDs"
+				],
+				"usteer": [
+					"remote_info",
+					"local_info"
+				],
+				"uci": [
+					"get"
+				],
+				"file": [
+					"read",
+					"exec"
+				]
+			},
+			"uci": [
+				"dhcp",
+				"firewall",
+				"wireless"
+			],
+			"file": {
+				"/openwrt-router-ha/v1": [
+					"read"
+				],
+				"/proc/stat": [
+					"read"
+				],
+				"/etc/apk/world": [
+					"read"
+				],
+				"/sbin/ip -4 neigh show": [
+					"exec"
+				],
+				"/usr/bin/apk search *": [
+					"exec"
+				],
+				"/bin/uclient-fetch -q -T 5 -O - https://api.ipify.org": [
+					"exec"
+				]
+			}
+		},
+		"write": {
+			"ubus": {
+				"uci": [
+					"set",
+					"add",
+					"delete",
+					"commit"
+				],
+				"network": [
+					"reload"
+				],
+				"network.wireless": [
+					"up",
+					"down"
+				],
+				"hostapd.*": [
+					"del_client"
+				],
+				"rc": [
+					"init"
+				],
+				"file": [
+					"write",
+					"exec"
+				]
+			},
+			"uci": [
+				"firewall",
+				"wireless"
+			],
+			"file": {
+				"/sys/class/leds/*": [
+					"write"
+				],
+				"/sbin/reboot": [
+					"exec"
+				],
+				"/sys/devices/platform/*/leds/*": [
+					"write"
+				]
+			}
+		}
+	}
+}

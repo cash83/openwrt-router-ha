@@ -80,6 +80,22 @@
   };
 
   window.appBackup = (id, status, data) => answer(id, { status, data });
+  window.appUpload = (id, status, text) => answer(id, { status, text });
+  window.appFile = (id, name, data) => answer(id, { name, data });
+  const upload = native.upload
+    ? (url, session, path, data) => ask((id) => native.upload(id, url, session, path, data), 70000)
+    : null;
+
+  /** Let the user choose a file on the phone: {name, data} or null. */
+  const pickFile = () => (native.pickFile
+    ? ask((id) => native.pickFile(id), 600000).then((file) => (file && file.data ? file : null))
+    : Promise.resolve(null));
+
+  /** Put a configuration backup back on a node; the node restarts. */
+  function restore(node, data) {
+    if (mode === "router") return router.restore(node.id, data);
+    return hass.callWS({ type: "openwrt_router/restore", node: node.id, data });
+  }
 
   /** A node's configuration archive, as base64. */
   async function backup(node) {
@@ -174,7 +190,7 @@
   // ---- the router alone
 
   async function connectRouter() {
-    const candidate = new window.DirectRouter(config.routerHost, config.routerUser, native.routerPassword(), http);
+    const candidate = new window.DirectRouter(config.routerHost, config.routerUser, native.routerPassword(), http, upload);
     let accepted;
     try {
       accepted = await candidate.authenticate();
@@ -463,6 +479,8 @@
             rpc: (object, method, args) => rpc(node, object, method, args),
             rpcOn: (other, object, method, args) => rpc(other, object, method, args),
             backup: () => backup(node),
+            pick: pickFile,
+            restore: (data) => restore(node, data),
             save: (name, data) => native.saveFile(name, data),
             passwordChanged: (password) => {
               native.saveRouter(config.routerHost, config.routerUser || "root", password);

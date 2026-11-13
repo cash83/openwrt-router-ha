@@ -45,6 +45,9 @@
 				"wireless"
 			],
 			"file": {
+				"/openwrt-router-ha/v1": [
+					"read"
+				],
 				"/proc/stat": [
 					"read"
 				],

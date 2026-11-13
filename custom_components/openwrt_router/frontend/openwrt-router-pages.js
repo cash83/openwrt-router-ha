@@ -298,7 +298,8 @@ pre.out{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 
 
   function explain(error) {
     const text = String((error && error.message) || error || "");
-    if (/unknown command/i.test(text)) return "Per queste pagine serve l'integrazione OpenWrt Router 0.7.0 o più recente in Home Assistant.";
+    if (/unknown command/i.test(text)) return "Per questa funzione serve l'integrazione OpenWrt Router aggiornata in Home Assistant.";
+    if (/not a router backup|non è un backup/i.test(text)) return "Questo file non è un backup del router.";
     if (/unreachable|non collegato|nessuna risposta|interrotto/i.test(text)) return "Il router non risponde. Controlla il collegamento e riprova.";
     if (/not available|not_allowed/i.test(text)) return "Questa lettura non è disponibile passando da Home Assistant.";
     if (/"?code"?:\s*-32002|\[6\]|: 6$|Access denied/i.test(text)) return "Il router non concede questa lettura a questo utente.";
@@ -838,7 +839,27 @@ pre.out{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 
       note("Un file con tutte le impostazioni di questo nodo: reti Wi-Fi, IP fissi, porte aperte, DNS, mesh. Non contiene il firmware né i pacchetti installati."),
       start, result));
     out.append(note("Ogni nodo ha il suo backup: scegli il nodo dal menu e scaricalo per ciascuno. Il file contiene anche le password del Wi-Fi: tienilo al sicuro."),
-      note("Per rimettere un backup sul router si usa per ora l'interfaccia web (Sistema → Backup → Ripristina)."));
+      note("Conserva i file anche fuori dal telefono, per esempio sul PC."));
+    const again = button("Scegli un file di backup", async () => {
+      const file = await c.pick();
+      if (!file) return;
+      if (!/^H4sI/.test(file.data)) { toast("Questo file non è un backup del router."); return; }
+      const sure = await ask({ title: "Ripristinare " + c.node.name + "?", ok: "Ripristina e riavvia", danger: true,
+        text: `File: ${file.name}. Tutte le impostazioni di ${c.node.name} vengono sostituite con quelle del file e il router si riavvia: la rete cade per circa due minuti. Usa solo un backup fatto da questo stesso nodo.` });
+      if (!sure) return;
+      again.disabled = true; again.textContent = "Ripristino…";
+      try {
+        await c.restore(file.data);
+        toast("Ripristinato: " + c.node.name + " si sta riavviando");
+        close();
+      } catch (error) {
+        toast(explain(error));
+        again.disabled = false; again.textContent = "Scegli un file di backup";
+      }
+    }, "danger");
+    out.append(...card("Ripristina " + c.node.name,
+      note("Rimette sul router le impostazioni salvate in un backup. Serve dopo un reset o se una modifica ha rotto qualcosa."),
+      again));
   };
 
   PAGES.interfaces = async (c, out) => {
@@ -1094,6 +1115,20 @@ pre.out{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 
       rpcOn,
       action: (message) => call(message).then((reply) => { if (changed) changed(); return reply; }),
       backup: () => call({ type: "openwrt_router/backup", node: node.id }).then((reply) => reply.data),
+      restore: (data) => call({ type: "openwrt_router/restore", node: node.id, data }),
+      pick: () => new Promise((resolve) => {
+        const input = h("input", { type: "file", accept: ".gz,.tgz,application/gzip" });
+        input.addEventListener("change", () => {
+          const file = input.files && input.files[0];
+          if (!file || file.size > 8 * 1024 * 1024) return resolve(null);
+          const reader = new FileReader();
+          reader.onload = () => resolve({ name: file.name, data: String(reader.result).split(",")[1] || "" });
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        });
+        input.addEventListener("cancel", () => resolve(null));
+        input.click();
+      }),
       save: (name, data) => {
         const bytes = Uint8Array.from(atob(data), (ch) => ch.charCodeAt(0));
         const url = URL.createObjectURL(new Blob([bytes], { type: "application/gzip" }));

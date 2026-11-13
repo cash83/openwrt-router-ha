@@ -11,6 +11,11 @@ Nothing here imports Home Assistant, so the module can be run and tested alone.
 from __future__ import annotations
 
 import ipaddress
+import gzip
+import io
+import json
+import tarfile
+from pathlib import Path
 import logging
 import re
 import time
@@ -33,6 +38,11 @@ PUBLIC_IP_URL = "https://api.ipify.org"
 PUBLIC_IP_MAX_AGE = 900
 WIRED_GRACE = 180
 MOVE_BAN = 60
+
+RIGHTS_FILE = Path(__file__).parent / "openwrt-router-ha.json"
+RIGHTS_TARGET = "usr/share/rpcd/acl.d/openwrt-router-ha.json"
+RIGHTS_MARK = "/openwrt-router-ha/v"
+UPLOAD_PATH = "/tmp/backup.tar.gz"
 
 BANDS = ("2g", "5g", "6g")
 BAND_LABEL = {"2g": "2.4 GHz", "5g": "5 GHz", "6g": "6 GHz"}
@@ -111,6 +121,9 @@ class OpenWrtApi:
         self._bytes: dict[str, tuple[int, int, float]] = {}
         self._wired: dict[str, tuple[float, str]] = {}
         self._node_urls: dict[str, str] = {}
+        # Install the rights file on routers that lack it (off for the tests).
+        self.auto_rights = False
+        self._rights_checked: set[str] = set()
         self._known_nodes: dict[str, dict[str, Any]] = {}
         self._led_snapshots: dict[str, dict[str, tuple[str, int]]] = {}
         self._public_ip: tuple[float, str] | None = None
@@ -325,6 +338,8 @@ class OpenWrtApi:
 
     def _node(self, address: str, base: str, is_main: bool) -> tuple[dict[str, Any], list[dict]]:
         """Everything about one access point, plus the stations attached to it."""
+        if self.auto_rights:
+            self.ensure_rights(base)
         board = self.call("system", "board", base=base, strict=True)
         info = self.call("system", "info", base=base) or {}
         radios = self._radios(base)
@@ -677,6 +692,81 @@ class OpenWrtApi:
         if not reply.content.startswith(b"\x1f\x8b"):
             raise OpenWrtError("the router did not return a backup")
         return reply.content
+
+    # ------------------------------------------------- files on the router
+
+    def _upload(self, base: str, data: bytes) -> None:
+        """Put an archive where the router's "restore backup" expects it."""
+        self.call("system", "board", base=base, strict=True)  # a live session
+        reply = self._http.post(
+            f"{base}/cgi-bin/cgi-upload",
+            data={"sessionid": self._sessions[base], "filename": UPLOAD_PATH},
+            files={"filedata": ("backup.tar.gz", data, "application/gzip")},
+            timeout=60,
+        )
+        reply.raise_for_status()
+        if "size" not in reply.text:
+            raise OpenWrtError("the router did not accept the file")
+
+    def _unpack(self, base: str) -> None:
+        out = self.call(
+            "file", "exec",
+            {"command": "/sbin/sysupgrade", "params": ["--restore-backup", UPLOAD_PATH]},
+            base=base, strict=True, timeout=60,
+        )
+        if (out or {}).get("code"):
+            raise OpenWrtError(f"restore failed: {(out or {}).get('stderr', '')}".strip())
+
+    def ensure_rights(self, base: str) -> bool:
+        """Install the rights file on a router that lacks this version. True when it did.
+
+        The file goes in as a one-file archive through the router's own
+        "restore backup", which a normal login is allowed to use.
+        """
+        if base in self._rights_checked:
+            return False
+        self._rights_checked.add(base)
+        try:
+            text = RIGHTS_FILE.read_text(encoding="utf-8")
+            files = json.loads(text)["openwrt-router-ha"]["read"]["file"]
+            mark = next(key for key in files if key.startswith(RIGHTS_MARK))
+            access = self.call(
+                "session", "access", {"scope": "file", "object": mark, "function": "read"}, base=base
+            )
+            if (access or {}).get("access"):
+                return False
+            raw = io.BytesIO()
+            with tarfile.open(fileobj=raw, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+                data = text.encode()
+                info = tarfile.TarInfo(RIGHTS_TARGET)
+                info.size = len(data)
+                info.mode = 0o644
+                tar.addfile(info, io.BytesIO(data))
+            self._upload(base, gzip.compress(raw.getvalue()))
+            self._unpack(base)
+            self.call("rc", "init", {"name": "rpcd", "action": "reload"}, base=base)
+            self._sessions.pop(base, None)
+            time.sleep(2)
+            _LOGGER.info("Installed the rights file on %s", base)
+            return True
+        except Exception:  # noqa: BLE001 - the integration works without it, with less
+            _LOGGER.debug("Could not install the rights file on %s", base, exc_info=True)
+            return False
+
+    def restore(self, node_id: str, data: bytes) -> None:
+        """Put a configuration backup back on a node, then restart it."""
+        if not data.startswith(b"\x1f\x8b"):
+            raise OpenWrtError("this file is not a router backup")
+        base = self._base(node_id)
+        self._upload(base, data)
+        listing = self.call(
+            "file", "exec", {"command": "/bin/tar", "params": ["-tzf", UPLOAD_PATH]},
+            base=base, strict=True, timeout=30,
+        )
+        if "etc/config/" not in str((listing or {}).get("stdout", "")):
+            raise OpenWrtError("this file is not a router backup")
+        self._unpack(base)
+        self.reboot(node_id)
 
     def _ordered_nodes(self) -> list[str]:
         """Satellites first, so a change that cuts the link reaches them all."""

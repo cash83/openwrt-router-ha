@@ -2,6 +2,9 @@ package it.casa.wifi;
 
 import android.app.Activity;
 import android.content.ContentValues;
+import android.content.Intent;
+import android.database.Cursor;
+import android.provider.OpenableColumns;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.Uri;
@@ -60,6 +63,9 @@ public class MainActivity extends Activity {
     private static final String APP_PAGE = "file:///android_asset/index.html";
     private static final String CALLBACK_MARK = "wifi_di_casa_login";
     private static final int TIMEOUT_MS = 7000;
+    private static final int PICK_FILE = 41;
+    private static final int MAX_FILE = 8 * 1024 * 1024;
+    private int pendingPick = 0;
 
     private WebView web;
     private FrameLayout root;
@@ -370,6 +376,49 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** The file the user chose for the page: window.appFile(id, name, base64), empty when none. */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent result) {
+        super.onActivityResult(requestCode, resultCode, result);
+        if (requestCode != PICK_FILE) {
+            return;
+        }
+        final int id = pendingPick;
+        pendingPick = 0;
+        String name = "";
+        String data = "";
+        Uri uri = resultCode == RESULT_OK && result != null ? result.getData() : null;
+        if (uri != null) {
+            try {
+                try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        int column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                        if (column >= 0) {
+                            name = cursor.getString(column);
+                        }
+                    }
+                }
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                try (InputStream stream = getContentResolver().openInputStream(uri)) {
+                    byte[] chunk = new byte[8192];
+                    int read;
+                    while (stream != null && (read = stream.read(chunk)) > 0 && buffer.size() <= MAX_FILE) {
+                        buffer.write(chunk, 0, read);
+                    }
+                }
+                if (buffer.size() <= MAX_FILE) {
+                    data = Base64.encodeToString(buffer.toByteArray(), Base64.NO_WRAP);
+                }
+            } catch (Exception unreadable) {
+                data = "";
+            }
+        }
+        if (ownPage) {
+            web.evaluateJavascript("window.appFile(" + id + "," + JSONObject.quote(name == null ? "" : name)
+                    + ",'" + data + "')", null);
+        }
+    }
+
     /** What the bundled page can ask the app. Home Assistant's own pages get no answer. */
     private final class Bridge {
 
@@ -560,6 +609,90 @@ public class MainActivity extends Activity {
                     }
                 }
                 final String script = "window.appBackup(" + id + "," + status + ",'" + data + "')";
+                runOnUiThread(() -> {
+                    if (ownPage) {
+                        web.evaluateJavascript(script, null);
+                    }
+                });
+            }).start();
+        }
+
+        /** Let the user choose a file; the answer comes through window.appFile. */
+        @JavascriptInterface
+        public void pickFile(int id) {
+            if (!ownPage) {
+                return;
+            }
+            runOnUiThread(() -> {
+                pendingPick = id;
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                try {
+                    startActivityForResult(intent, PICK_FILE);
+                } catch (Exception noPicker) {
+                    pendingPick = 0;
+                    web.evaluateJavascript("window.appFile(" + id + ",'','')", null);
+                }
+            });
+        }
+
+        /**
+         * Hand a router a file (base64) through its upload door, with the session
+         * the page already holds. Answers through window.appUpload(id, status, text).
+         */
+        @JavascriptInterface
+        public void upload(int id, String url, String session, String path, String base64) {
+            if (!ownPage || url == null || !url.endsWith("/cgi-bin/cgi-upload")
+                    || session == null || path == null || base64 == null) {
+                return;
+            }
+            new Thread(() -> {
+                int status = 0;
+                String text = "";
+                HttpURLConnection connection = null;
+                try {
+                    String boundary = "----wifidicasa" + System.nanoTime();
+                    ByteArrayOutputStream body = new ByteArrayOutputStream();
+                    String[][] fields = {{"sessionid", session}, {"filename", path}};
+                    for (String[] field : fields) {
+                        body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + field[0]
+                                + "\"\r\n\r\n" + field[1] + "\r\n").getBytes(StandardCharsets.UTF_8));
+                    }
+                    body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"filedata\"; "
+                            + "filename=\"backup.tar.gz\"\r\nContent-Type: application/octet-stream\r\n\r\n")
+                            .getBytes(StandardCharsets.UTF_8));
+                    body.write(Base64.decode(base64, Base64.DEFAULT));
+                    body.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+                    connection = (HttpURLConnection) new URL(url).openConnection();
+                    connection.setConnectTimeout(TIMEOUT_MS);
+                    connection.setReadTimeout(60000);
+                    connection.setRequestMethod("POST");
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+                    connection.setFixedLengthStreamingMode(body.size());
+                    try (OutputStream out = connection.getOutputStream()) {
+                        body.writeTo(out);
+                    }
+                    status = connection.getResponseCode();
+                    InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    if (stream != null) {
+                        byte[] chunk = new byte[4096];
+                        int read;
+                        while ((read = stream.read(chunk)) > 0) {
+                            buffer.write(chunk, 0, read);
+                        }
+                    }
+                    text = buffer.toString("UTF-8");
+                } catch (Exception unreachable) {
+                    status = 0;
+                } finally {
+                    if (connection != null) {
+                        connection.disconnect();
+                    }
+                }
+                final String script = "window.appUpload(" + id + "," + status + "," + JSONObject.quote(text) + ")";
                 runOnUiThread(() -> {
                     if (ownPage) {
                         web.evaluateJavascript(script, null);
