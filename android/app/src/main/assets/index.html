@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Wi-Fi di casa</title>
+<style>
+:root{--primary-background-color:#f3f5f8;--card-background-color:#fff;--primary-text-color:#1b1e24;
+  --secondary-text-color:#6b7280;--divider-color:rgba(0,0,0,.12);--primary-color:#0b74de;
+  --app-header-background-color:#0b74de;--app-header-text-color:#fff;
+  --success-color:#1f9d55;--warning-color:#d99a00;--error-color:#d6453d}
+@media (prefers-color-scheme:dark){:root{--primary-background-color:#111318;--card-background-color:#1c1f26;
+  --primary-text-color:#e6e8ee;--secondary-text-color:#9aa0ad;--divider-color:rgba(255,255,255,.12);
+  --primary-color:#3b9eff;--app-header-background-color:#171a21;--success-color:#35b56a;--warning-color:#e7b23c}}
+html,body{margin:0;min-height:100%;background:var(--primary-background-color);color:var(--primary-text-color);
+  font-family:Roboto,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box}
+#setup{display:none;min-height:100vh;padding:28px 20px 40px;max-width:520px;margin:0 auto}
+#setup.show{display:block}
+.logo{display:grid;place-items:center;width:84px;height:84px;margin:18px auto 14px;border-radius:24px;
+  background:linear-gradient(180deg,#16202b,#090c11);box-shadow:0 10px 28px rgba(0,0,0,.35)}
+h1{margin:0 0 6px;text-align:center;font-size:24px;font-weight:650}
+.lead{margin:0 0 24px;text-align:center;color:var(--secondary-text-color);font-size:14.5px;line-height:1.45}
+label{display:block;margin:16px 2px 6px;font-size:13px;font-weight:600;color:var(--secondary-text-color)}
+input,textarea{width:100%;padding:14px;border:1px solid var(--divider-color);border-radius:14px;outline:none;
+  background:var(--card-background-color);color:inherit;font:inherit;font-size:15px}
+textarea{min-height:104px;resize:none;font-family:ui-monospace,monospace;font-size:12.5px;word-break:break-all}
+input:focus,textarea:focus{border-color:var(--primary-color)}
+.hint{margin:6px 2px 0;font-size:12.5px;line-height:1.45;color:var(--secondary-text-color)}
+button.main{width:100%;min-height:52px;margin-top:22px;border:0;border-radius:16px;background:var(--primary-color);
+  color:#fff;font:inherit;font-size:16px;font-weight:600}
+button.main:disabled{opacity:.6}
+button.plain{width:100%;min-height:48px;margin-top:10px;border:1px solid var(--divider-color);border-radius:16px;
+  background:none;color:inherit;font:inherit;font-size:15px}
+button.plain.danger{color:var(--error-color)}
+.error{display:none;margin-top:16px;padding:12px 14px;border-radius:14px;font-size:14px;line-height:1.4;
+  background:color-mix(in srgb,var(--error-color) 16%,transparent);color:var(--error-color)}
+.error.show{display:block}
+ol{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5;color:var(--secondary-text-color)}
+#banner{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:50;display:none;
+  align-items:center;gap:10px;padding:12px 16px;border-radius:16px;background:#222;color:#fff;font-size:14px;
+  box-shadow:0 8px 28px rgba(0,0,0,.4)}
+#banner.show{display:flex}
+#banner i{width:10px;height:10px;border-radius:50%;background:var(--warning-color);flex:none;animation:pulse 1s infinite alternate}
+@keyframes pulse{to{opacity:.3}}
+#menu{position:fixed;inset:0;z-index:60;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.55)}
+#menu.show{display:flex}
+#menu .sheet{width:100%;max-width:520px;padding:10px 18px calc(18px + env(safe-area-inset-bottom));
+  background:var(--card-background-color);border-radius:22px 22px 0 0}
+#menu .grip{width:40px;height:4px;margin:4px auto 14px;border-radius:9px;background:var(--divider-color)}
+#menu h2{margin:0 0 4px;font-size:19px}
+#menu dl{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;margin:14px 0 6px;font-size:14px}
+#menu dt{color:var(--secondary-text-color)}#menu dd{margin:0;text-align:right;word-break:break-all}
+</style>
+</head>
+<body>
+<section id="setup">
+  <div class="logo"><svg viewBox="18 22 72 72" width="58" height="58" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M36 52V80H72V52" stroke="#4db8e8" stroke-width="5.2"/><path d="M30 56 54 34 78 56" stroke="#4db8e8" stroke-width="5.2"/>
+    <path d="M47.64 65.64A9 9 0 0 1 60.36 65.64" stroke="#fff" stroke-width="4.4"/><path d="M41.98 59.98A17 17 0 0 1 66.02 59.98" stroke="#fff" stroke-width="4.4"/>
+    <circle cx="54" cy="72" r="3.6" fill="#fff"/></svg></div>
+  <h1>Wi-Fi di casa</h1>
+  <p class="lead">Collega l'app al tuo Home Assistant. I dati restano tra il telefono e casa tua.</p>
+
+  <label for="home">Indirizzo di Home Assistant in casa</label>
+  <input id="home" type="url" inputmode="url" placeholder="http://192.168.50.165:8123" autocomplete="off" autocapitalize="off">
+
+  <label for="remote">Indirizzo da fuori casa (facoltativo)</label>
+  <input id="remote" type="url" inputmode="url" placeholder="http://100.x.y.z:8123" autocomplete="off" autocapitalize="off">
+  <p class="hint">L'indirizzo Tailscale di Home Assistant. L'app prova prima quello di casa, poi questo.</p>
+
+  <label for="token">Token di accesso</label>
+  <textarea id="token" placeholder="Incolla qui il token" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+  <ol>
+    <li>In Home Assistant tocca il tuo nome in basso a sinistra.</li>
+    <li>Apri la scheda <b>Sicurezza</b> e scendi fino a <b>Token di accesso a lunga vita</b>.</li>
+    <li>Crea un token, chiamalo "App Wi-Fi", copialo e incollalo qui.</li>
+  </ol>
+
+  <div class="error" id="error"></div>
+  <button class="main" id="connect">Collega</button>
+</section>
+
+<div id="app"></div>
+<div id="banner"><i></i><span id="bannerText"></span></div>
+<div id="menu"><div class="sheet">
+  <div class="grip"></div><h2>Collegamento</h2>
+  <dl><dt>Collegato a</dt><dd id="mUrl">—</dd><dt>Home Assistant</dt><dd id="mVersion">—</dd><dt>App</dt><dd id="mApp">—</dd></dl>
+  <button class="plain" id="mEdit">Cambia indirizzi o token</button>
+  <button class="plain danger" id="mForget">Scollega questo telefono</button>
+  <button class="plain" id="mClose">Chiudi</button>
+</div></div>
+
+<script src="openwrt-router-panel.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

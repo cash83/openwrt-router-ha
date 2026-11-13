@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Same drawing as tools/make_icons.py, kept inside the 66dp safe zone. -->
+    <path android:pathData="M36,52 V80 H72 V52"
+        android:strokeColor="#4DB8E8" android:strokeWidth="5.2"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M30,56 L54,34 L78,56"
+        android:strokeColor="#4DB8E8" android:strokeWidth="5.2"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M47.64,65.64 A9,9 0 0 1 60.36,65.64"
+        android:strokeColor="#FFFFFF" android:strokeWidth="4.4" android:strokeLineCap="round" />
+    <path android:pathData="M41.98,59.98 A17,17 0 0 1 66.02,59.98"
+        android:strokeColor="#FFFFFF" android:strokeWidth="4.4" android:strokeLineCap="round" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,72 m-3.6,0 a3.6,3.6 0 1 0 7.2,0 a3.6,3.6 0 1 0 -7.2,0" />
+</vector>

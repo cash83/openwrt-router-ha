@@ -1,0 +1,33 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'it.casa.wifi'
+    compileSdk 35
+    lint { checkReleaseBuilds false; abortOnError false }
+
+    defaultConfig {
+        applicationId 'it.casa.wifi'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    // The page the app shows is the very file Home Assistant serves in its
+    // sidebar, taken from the integration so the two cannot drift apart.
+    sourceSets {
+        main.assets.srcDirs = ['src/main/assets', '../../custom_components/openwrt_router/frontend']
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+}
