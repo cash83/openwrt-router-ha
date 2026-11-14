@@ -17,6 +17,12 @@ html,body{margin:0;min-height:100%;background:var(--primary-background-color);co
 *{box-sizing:border-box}
 #setup{display:none;min-height:100vh;padding:28px 20px 40px;max-width:520px;margin:0 auto}
 #setup.show{display:block}
+#wait{display:none;min-height:100vh;padding:28px 20px 40px;max-width:520px;margin:0 auto}
+#wait.show{display:block}
+#wait .logo{margin-top:16vh}
+#wait .spin{display:block;width:26px;height:26px;margin:0 auto 18px;border:3px solid var(--divider-color);border-top-color:var(--primary-color);border-radius:50%;animation:turn 1s linear infinite}
+#wait.failed .spin{display:none}
+@keyframes turn{to{transform:rotate(360deg)}}
 .logo{display:grid;place-items:center;width:84px;height:84px;margin:18px auto 14px;border-radius:24px;
   background:linear-gradient(180deg,#16202b,#090c11);box-shadow:0 10px 28px rgba(0,0,0,.35)}
 h1{margin:0 0 6px;text-align:center;font-size:24px;font-weight:650}
@@ -139,6 +145,18 @@ button.plain.small{width:auto;min-height:38px;margin:0;padding:0 14px;font-size:
 
   <div class="error" id="error"></div>
   <button class="main" id="connect">Accedi con Home Assistant</button>
+</section>
+
+<section id="wait">
+  <div class="logo"><svg viewBox="18 22 72 72" width="58" height="58" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M36 52V80H72V52" stroke="#4db8e8" stroke-width="5.2"/><path d="M30 56 54 34 78 56" stroke="#4db8e8" stroke-width="5.2"/>
+    <path d="M47.64 65.64A9 9 0 0 1 60.36 65.64" stroke="#fff" stroke-width="4.4"/><path d="M41.98 59.98A17 17 0 0 1 66.02 59.98" stroke="#fff" stroke-width="4.4"/>
+    <circle cx="54" cy="72" r="3.6" fill="#fff"/></svg></div>
+  <h1 id="wTitle">Mi collego…</h1>
+  <p class="lead" id="wText"></p>
+  <i class="spin"></i>
+  <button class="main" id="wRetry">Riprova adesso</button>
+  <button class="plain" id="wSetup">Cambia collegamento</button>
 </section>
 
 <div id="app"></div>

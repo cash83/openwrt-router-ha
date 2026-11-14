@@ -18,6 +18,7 @@
 
   let config = {};
   let mode = "ha";
+  let preferred = "ha";
   let socket = null;
   let ready = false;
   let router = null;
@@ -51,6 +52,7 @@
   function readConfig() {
     try { config = JSON.parse(native.getConfig()) || {}; } catch (error) { config = {}; }
     mode = config.mode === "router" ? "router" : "ha";
+    preferred = mode;
     remember = config.remember !== false;
     return mode === "router"
       ? Boolean(config.routerSaved && config.routerHost)
@@ -235,17 +237,44 @@
     retryDelay = Math.min(retryDelay * 1.6, 15000);
   }
 
+  /** Is this way of connecting set up on this phone? */
+  const configured = (way) => (way === "router"
+    ? Boolean(config.routerSaved && config.routerHost)
+    : Boolean(config.signedIn && (config.home || config.remote)));
+
   async function retry() {
     clearTimeout(retryTimer);
+    if (trying) return;
+    trying = true;
+    const other = preferred === "router" ? "ha" : "router";
+    const ways = [preferred].concat(configured(other) ? [other] : []);
+    let connected = false;
     try {
-      await (mode === "router" ? connectRouter() : connectHa());
-    } catch (error) {
-      if (error.message === "auth") {
-        return showSetup(mode === "router"
-          ? "Il router ha rifiutato utente o password."
-          : "L'accesso a Home Assistant è scaduto. Accedi di nuovo.");
+      for (const way of ways) {
+        mode = way;
+        if (!shown()) showWait(false, "Mi collego…", way === "router"
+          ? "Provo il router " + (config.routerHost || "")
+          : "Provo Home Assistant" + (way !== preferred ? " (Nabu Casa)" : ""));
+        try {
+          await (way === "router" ? connectRouter() : connectHa());
+          connected = true;
+          break;
+        } catch (error) {
+          if (error.message === "auth" && way === preferred) {
+            mode = preferred;
+            return showSetup(way === "router"
+              ? "Il router ha rifiutato utente o password."
+              : "L'accesso a Home Assistant è scaduto. Accedi di nuovo.");
+          }
+        }
       }
-      banner(mode === "router" ? "Router non raggiungibile, riprovo…" : "Casa non raggiungibile, riprovo…");
+    } finally {
+      trying = false;
+    }
+    if (!connected) {
+      mode = preferred;
+      if (shown()) banner(mode === "router" ? "Router non raggiungibile, riprovo…" : "Casa non raggiungibile, riprovo…");
+      else showWait(true, "Non riesco a collegarmi", whyNot());
       return later();
     }
     retryDelay = 1500;
@@ -296,6 +325,38 @@
     }
   }
 
+  let trying = false;
+  /** True while the network page is on screen (a lost connection then shows a banner, not a full screen). */
+  const shown = () => Boolean(panel) && $("app").style.display !== "none";
+
+  /** The full screen shown instead of the page while there is no connection. */
+  function showWait(failed, title, text) {
+    $("setup").classList.remove("show");
+    $("app").style.display = "none";
+    $("wait").classList.add("show");
+    $("wait").classList.toggle("failed", failed);
+    $("wTitle").textContent = title;
+    $("wText").textContent = text;
+    banner("");
+  }
+
+  /** Why nothing answered, in words that say what to do. */
+  function whyNot() {
+    const parts = [];
+    if (configured("router")) {
+      parts.push(`Il router ${config.routerHost} non risponde: il collegamento diretto funziona solo sul Wi-Fi di casa o con Tailscale acceso.`);
+    }
+    if (configured("ha")) {
+      parts.push(clean(config.remote)
+        ? `Home Assistant non risponde né a ${clean(config.home) || "casa"} né a ${clean(config.remote)}.`
+        : "Home Assistant non risponde e l'indirizzo Nabu Casa non è ancora stato trovato: apri l'app una volta da casa, oppure scrivilo a mano in «Cambia collegamento».");
+    } else {
+      parts.push("Per usare l'app fuori casa senza Tailscale accedi una volta anche con «Home Assistant» (in «Cambia collegamento»): poi l'app passa da sola a Nabu Casa quando il router non si raggiunge.");
+    }
+    parts.push("Riprovo da solo ogni pochi secondi.");
+    return parts.join(" ");
+  }
+
   function banner(text) {
     $("bannerText").textContent = text;
     $("banner").classList.toggle("show", Boolean(text));
@@ -331,6 +392,7 @@
 
   function showSetup(message) {
     stop();
+    $("wait").classList.remove("show");
     window.RouterPages.close();
     closeDrawer();
     $("app").style.display = "none";
@@ -356,6 +418,7 @@
 
   function showApp() {
     $("setup").classList.remove("show");
+    $("wait").classList.remove("show");
     $("app").style.display = "";
     if (!panel) {
       panel = document.createElement("openwrt-router-panel");
@@ -416,8 +479,7 @@
         if (!result.ok) return fail("Home Assistant non risponde a questo indirizzo. Fuori casa serve Tailscale acceso, oppure l'indirizzo Nabu Casa.");
       }
       readConfig();
-      banner("Mi collego…");
-      $("setup").classList.remove("show");
+      showWait(false, "Mi collego…", "");
       retry();
     } finally {
       button.disabled = false;
@@ -533,6 +595,8 @@
       eye.setAttribute("aria-pressed", "false");
     });
   }
+  $("wRetry").addEventListener("click", () => { retryDelay = 1500; retry(); });
+  $("wSetup").addEventListener("click", () => showSetup(""));
   $("dClose").addEventListener("click", closeDrawer);
   $("dHome").addEventListener("click", closeDrawer);
   $("drawer").addEventListener("click", (event) => { if (event.target.id === "drawer") closeDrawer(); });
@@ -559,8 +623,7 @@
     const veil = root && root.getElementById("veil");
     if (veil && veil.classList.contains("open")) { panel._close(); return true; }
     if ($("setup").classList.contains("show") && panel && readConfig()) {
-      banner("Mi collego…");
-      $("setup").classList.remove("show");
+      showWait(false, "Mi collego…", "");
       retry();
       return true;
     }
@@ -577,7 +640,7 @@
   const failure = /^#errore=(.*)$/.exec(location.hash || "");
   if (failure) history.replaceState(null, "", location.pathname);
   if (readConfig() && !failure) {
-    banner("Mi collego…");
+    showWait(false, "Mi collego…", "");
     retry();
   } else {
     showSetup(failure ? decodeURIComponent(failure[1]) : "");
