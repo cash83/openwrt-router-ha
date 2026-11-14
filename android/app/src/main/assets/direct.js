@@ -481,14 +481,31 @@
       const nodes = Object.values(this.snapshot.nodes);
       const targets = nodeId ? [nodeId]
         : nodes.filter((n) => !n.is_main && n.online).map((n) => n.id).concat(nodes.filter((n) => n.is_main).map((n) => n.id));
+      // Write the setting on every node before any radio restarts: a restart can cut the way
+      // to the other nodes for a minute or more, and nodes left with different settings
+      // would not find each other again.
       const errors = [];
+      const written = [];
       for (const target of targets) {
-        try { await this.applyRadio(this.baseOf(target), band, setting, value); } catch (error) { errors.push(error.message); }
+        const base = this.baseOf(target);
+        try { written.push([base, await this.writeRadio(base, band, setting, value)]); } catch (error) { errors.push(error.message); }
+      }
+      if (errors.length) {
+        for (const [base] of written) await this.call("uci", "revert", { config: "wireless" }, { base }).catch(() => {});
+        throw new Error(errors.join("; "));
+      }
+      for (const [base] of written) {
+        try { await this.call("uci", "commit", { config: "wireless" }, { base, strict: true }); } catch (error) { errors.push(error.message); }
+      }
+      for (const [base, radio] of written) {
+        // The setting is saved; a node that stops answering while its radio restarts takes it up on its own.
+        try { await this.reloadRadio(base, radio); } catch (error) { /* saved already */ }
       }
       if (errors.length) throw new Error(errors.join("; "));
     }
 
-    async applyRadio(base, band, setting, value) {
+    /** Stage one wireless setting on a node (not saved, nothing restarts) and return its radio. */
+    async writeRadio(base, band, setting, value) {
       const radio = (await this.radios(base))[band];
       if (!radio) throw new Error("radio assente");
       let [family, width] = split(radio.htmode);
@@ -527,7 +544,10 @@
         }
       } else throw new Error("impostazione sconosciuta");
 
-      await this.call("uci", "commit", { config: "wireless" }, { base, strict: true });
+      return radio;
+    }
+
+    async reloadRadio(base, radio) {
       await this.call("network", "reload", {}, { base, strict: true });
       if (radio.mesh_ifname) {
         await sleep(3000);

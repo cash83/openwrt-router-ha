@@ -799,16 +799,43 @@ class OpenWrtApi:
         if setting not in RADIO_SETTINGS:
             raise OpenWrtError(f"unknown setting {setting}")
         targets = [node_id] if node_id else self._ordered_nodes()
+        # Write the setting on every node before any radio restarts. A restart
+        # can cut the way to the other nodes for a minute or more (a 160 MHz
+        # channel listens for radar first), and nodes left with different
+        # settings would not find each other again.
+        written = []
         errors = []
         for target in targets:
             try:
-                self._apply_radio(self._base(target), band, setting, value)
+                base = self._base(target)
+                written.append((target, base, self._write_radio(base, band, setting, value)))
             except Exception as err:  # noqa: BLE001
                 errors.append(f"{target}: {err}")
         if errors:
+            # Nothing has restarted yet: put the nodes already written back as they were.
+            for _target, base, _radio in written:
+                try:
+                    self.call("uci", "revert", {"config": "wireless"}, base=base)
+                except Exception:  # noqa: BLE001
+                    pass
+            raise OpenWrtError("; ".join(errors))
+        for target, base, radio in written:
+            try:
+                self.call("uci", "commit", {"config": "wireless"}, base=base, strict=True)
+            except Exception as err:  # noqa: BLE001
+                errors.append(f"{target}: {err}")
+        for target, base, radio in written:
+            try:
+                self._restart_radio(base, radio)
+            except Exception as err:  # noqa: BLE001
+                # The setting is saved; a node that stopped answering while its
+                # radio restarts takes it up on its own.
+                _LOGGER.debug("%s did not confirm the radio restart: %s", target, err)
+        if errors:
             raise OpenWrtError("; ".join(errors))
 
-    def _apply_radio(self, base: str, band: str, setting: str, value: Any) -> None:
+    def _write_radio(self, base: str, band: str, setting: str, value: Any) -> dict[str, Any]:
+        """Stage one wireless setting on a node (not saved, nothing restarts) and return its radio."""
         radio = self._radios(base).get(band)
         if not radio:
             raise OpenWrtError(f"no {band} radio")
@@ -865,7 +892,9 @@ class OpenWrtApi:
                     raise OpenWrtError("the radio does not report its power levels")
                 uci_set(radio["radio"], {"txpower": str(max(1, ceiling - TX_POWER_BACKOFF[value]))})
 
-        self.call("uci", "commit", {"config": "wireless"}, base=base, strict=True)
+        return radio
+
+    def _restart_radio(self, base: str, radio: dict[str, Any]) -> None:
         self.call("network", "reload", base=base, strict=True)
         # A radio that also carries the link between nodes does not bring its
         # access point back after a reload; restarting the radio does.
