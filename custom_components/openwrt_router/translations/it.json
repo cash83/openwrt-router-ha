@@ -190,7 +190,7 @@
         "name": "Wi-Fi {band} rete nascosta"
       },
       "wifi_isolate": {
-        "name": "Wi-Fi {band} isola i dispositivi"
+        "name": "Wi-Fi {band} separa i dispositivi"
       },
       "client_internet": {
         "name": "Accesso a internet"
@@ -198,7 +198,7 @@
     },
     "select": {
       "wifi_mode": {
-        "name": "Wi-Fi {band} standard"
+        "name": "Wi-Fi {band} modalità"
       },
       "wifi_width": {
         "name": "Wi-Fi {band} larghezza canale"
