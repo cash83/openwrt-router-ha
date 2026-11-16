@@ -118,6 +118,9 @@ class Fake(api.OpenWrtApi):
             return {"macaddr": "80:af:ca:00:00:03" if base == MAIN else "80:af:ca:00:00:11"}
         if key == "uci.get" and args.get("config") == "dhcp":
             return {"values": {"lan": {"start": "10", "limit": "241", "leasetime": "2h"}}}
+        if key == "uci.get" and args.get("config") == "system":
+            return {"values": {"cfg01e48a": {".type": "system", "hostname": "Ufficio"},
+                               "ntp": {".type": "timeserver"}}}
         if key == "uci.get" and args.get("config") == "firewall":
             return {"values": {"habrk_aabbcc000002": {"target": "REJECT"}}}
         if key == "luci-rpc.getDHCPLeases":
@@ -248,6 +251,20 @@ def test_per_node_setting_touches_only_that_node(router: Fake) -> None:
     written = [c for c in router.calls if c[1:3] == ("uci", "set")]
     assert [(c[0], c[3]["values"]) for c in written] == [(NODE, {"channel": "6"})]
     assert not [c for c in router.calls if c[1] == "network.wireless"]
+
+
+def test_renaming_a_node_sets_its_host_name_and_applies_it(router: Fake) -> None:
+    router.collect()
+    router.calls.clear()
+    assert router.rename_node(NODE_ID, "  Camera da letto! ") == "Camera-da-letto"
+    assert [(c[0], c[1], c[2]) for c in router.calls if c[2] != "get"] == [
+        (NODE, "uci", "set"), (NODE, "uci", "commit"), (NODE, "rc", "init"),
+    ]
+    written = next(c[3] for c in router.calls if c[2] == "set")
+    assert written == {"config": "system", "section": "cfg01e48a",
+                       "values": {"hostname": "Camera-da-letto"}}
+    with pytest.raises(api.OpenWrtError):
+        router.rename_node(NODE_ID, " -- ")
 
 
 def test_unknown_choices_are_refused(router: Fake) -> None:

@@ -42,10 +42,11 @@
 			"uci": [
 				"dhcp",
 				"firewall",
+				"system",
 				"wireless"
 			],
 			"file": {
-				"/openwrt-router-ha/v1": [
+				"/openwrt-router-ha/v2": [
 					"read"
 				],
 				"/proc/stat": [
@@ -93,6 +94,7 @@
 			},
 			"uci": [
 				"firewall",
+				"system",
 				"wireless"
 			],
 			"file": {

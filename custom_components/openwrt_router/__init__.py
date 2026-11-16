@@ -45,6 +45,7 @@ PLATFORMS = [
     Platform.SWITCH,
     Platform.SELECT,
     Platform.BUTTON,
+    Platform.TEXT,
     Platform.DEVICE_TRACKER,
 ]
 
@@ -260,7 +261,7 @@ def ws_snapshot(
     {
         vol.Required("type"): f"{DOMAIN}/action",
         vol.Required("action"): vol.In(
-            ["refresh", "reboot", "leds", "radio", "restart_radio", "kick", "block", "move"]
+            ["refresh", "reboot", "leds", "radio", "restart_radio", "kick", "block", "move", "rename"]
         ),
         vol.Optional("entry_id"): str,
         vol.Optional("node"): vol.Any(str, None),
@@ -297,6 +298,8 @@ async def ws_action(
             await coordinator.async_run(api.kick_client, msg["mac"], msg.get("ban_seconds", 0))
         elif action == "move":
             await coordinator.async_run(api.move_client, msg["mac"], msg["node"])
+        elif action == "rename":
+            await coordinator.async_run(api.rename_node, msg["node"], str(msg["value"]))
         elif action == "block":
             await coordinator.async_run(api.block_client, msg["mac"], bool(msg["value"]))
     except (HomeAssistantError, KeyError) as err:

@@ -86,6 +86,13 @@ def mac_colon(mac: str | None) -> str:
     return ":".join(raw[i : i + 2] for i in range(0, 12, 2)) if len(raw) == 12 else ""
 
 
+def node_name(text: Any) -> str:
+    """A name a router accepts as its host name: letters, digits and hyphens, 63 at most."""
+    name = re.sub(r"[\s_]+", "-", str(text or "").strip())
+    name = re.sub(r"[^A-Za-z0-9-]", "", name)
+    return re.sub(r"-{2,}", "-", name)[:63].strip("-")
+
+
 def _netmask(prefix: Any) -> str | None:
     try:
         return str(ipaddress.ip_network(f"0.0.0.0/{int(prefix)}").netmask)
@@ -784,6 +791,27 @@ class OpenWrtApi:
         except requests.exceptions.RequestException:
             pass  # the router may drop the connection as it goes down
         self._sessions.pop(base, None)
+
+    def rename_node(self, node_id: str, name: str) -> str:
+        """Give a node a new name (its host name) and return the name it got."""
+        name = node_name(name)
+        if not name:
+            raise OpenWrtError("a name needs at least one letter or digit")
+        base = self._base(node_id)
+        values = (
+            self.call("uci", "get", {"config": "system"}, base=base, strict=True) or {}
+        ).get("values") or {}
+        section = next((k for k, v in values.items() if v.get(".type") == "system"), None)
+        if section is None:
+            raise OpenWrtError("this node has no system settings")
+        self.call(
+            "uci", "set",
+            {"config": "system", "section": section, "values": {"hostname": name}},
+            base=base, strict=True,
+        )
+        self.call("uci", "commit", {"config": "system"}, base=base, strict=True)
+        self.call("rc", "init", {"name": "system", "action": "reload"}, base=base, strict=True)
+        return name
 
     def restart_radio(self, node_id: str, band: str) -> None:
         base = self._base(node_id)

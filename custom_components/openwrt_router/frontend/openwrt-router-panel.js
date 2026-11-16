@@ -9,7 +9,8 @@ const TEXT = {
     publicIp: "IP pubblico", download: "Download", upload: "Upload", devices: "Dispositivi",
     nodes: "Nodi", main: "Router principale", satellite: "Nodo mesh", unreachable: "Non raggiungibile",
     link: "Collegamento", cable: "via cavo", cpu: "CPU", ram: "Memoria", up: "Acceso da",
-    lights: "Luci", restart: "Riavvia", wifi: "Reti Wi-Fi", channel: "Canale", width: "Larghezza",
+    lights: "Luci", restart: "Riavvia", rename: "Rinomina", renameTitle: "Nome del nodo",
+    renameNote: "Lettere, cifre e trattini. Gli spazi diventano trattini.", save: "Salva", wifi: "Reti Wi-Fi", channel: "Canale", width: "Larghezza",
     standard: "Standard", power: "Potenza", hidden: "Rete nascosta", isolate: "Isola i dispositivi",
     settings: "Impostazioni", allNodes: "su tutti i nodi", clients: "Dispositivi collegati",
     search: "Cerca per nome, IP o MAC", all: "Tutti", wired: "Cavo", sortSignal: "Segnale",
@@ -34,7 +35,8 @@ const TEXT = {
     publicIp: "Public IP", download: "Download", upload: "Upload", devices: "Devices",
     nodes: "Nodes", main: "Main router", satellite: "Mesh node", unreachable: "Unreachable",
     link: "Link", cable: "by cable", cpu: "CPU", ram: "Memory", up: "Running for",
-    lights: "Lights", restart: "Restart", wifi: "Wi-Fi networks", channel: "Channel", width: "Width",
+    lights: "Lights", restart: "Restart", rename: "Rename", renameTitle: "Node name",
+    renameNote: "Letters, digits and hyphens. Spaces become hyphens.", save: "Save", wifi: "Wi-Fi networks", channel: "Channel", width: "Width",
     standard: "Standard", power: "Power", hidden: "Hidden network", isolate: "Isolate devices",
     settings: "Settings", allNodes: "on every node", clients: "Connected devices",
     search: "Search by name, IP or MAC", all: "All", wired: "Cable", sortSignal: "Signal",
@@ -65,6 +67,7 @@ const ICON = {
   cable: "M4 1h16v8h-3v2h-2V9h-2v2h-2V9H9v2H7V9H4V1m3 12h2v3a3 3 0 0 0 3 3 3 3 0 0 0 3-3v-3h2v3a5 5 0 0 1-4 4.9V23h-2v-2.1A5 5 0 0 1 7 16v-3z",
   light: "M12 2a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9v1z",
   power: "M16.56 5.44l-1.45 1.45A5.97 5.97 0 0 1 18 12a6 6 0 0 1-12 0c0-2.17 1.16-4.06 2.88-5.12L7.44 5.44A7.96 7.96 0 0 0 4 12a8 8 0 0 0 16 0c0-2.72-1.36-5.12-3.44-6.56M13 3h-2v10h2V3z",
+  edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
   tune: "M3 17v2h6v-2H3M3 5v2h10V5H3m10 16v-2h8v-2h-8v-2h-2v6h2M7 9v2H3v2h4v2h2V9H7m14 4v-2H11v2h10m-6-4h2V7h4V5h-4V3h-2v6z",
   close: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z",
   chevron: "M7.41 8.58L12 13.17l4.59-4.59L18 10l-6 6-6-6 1.41-1.42z",
@@ -175,8 +178,8 @@ details[open] summary svg{transform:rotate(180deg)}
 .field label{flex:1}.field small{display:block;color:var(--soft);font-size:11.5px}
 select{max-width:58%;min-height:38px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:inherit;font:inherit;font-size:14px}
 .tools{display:grid;gap:10px}
-input[type=search]{width:100%;height:46px;padding:0 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:inherit;font:inherit;font-size:15px;outline:none}
-input[type=search]:focus{border-color:var(--accent)}
+input[type=search],input[type=text]{width:100%;height:46px;padding:0 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:inherit;font:inherit;font-size:15px;outline:none}
+input[type=search]:focus,input[type=text]:focus{border-color:var(--accent)}
 .scroll{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
 .scroll::-webkit-scrollbar{display:none}
 .list{padding:4px 0}
@@ -417,6 +420,7 @@ class OpenWrtRouterPanel extends HTMLElement {
           <span class="chip static">${esc(t.ram)} ${node.ram ?? "—"}%</span>
           <span class="chip static">${esc(duration(node.uptime, t))}</span>
           ${node.leds == null ? "" : `<button class="chip ${node.leds ? "on" : ""}" data-do="leds" data-node="${esc(node.id)}" data-value="${node.leds ? "" : "1"}">${svg("light", 16)}${esc(t.lights)}</button>`}
+          ${node.online ? `<button class="chip" data-do="rename" data-node="${esc(node.id)}" data-name="${esc(node.name)}">${svg("edit", 16)}${esc(t.rename)}</button>` : ""}
           <button class="chip danger" data-do="reboot" data-node="${esc(node.id)}" data-name="${esc(node.name)}">${svg("power", 16)}${esc(t.restart)}</button>
         </div></article>`;
     }).join("");
@@ -547,6 +551,23 @@ class OpenWrtRouterPanel extends HTMLElement {
       <button class="btn ${danger ? "danger" : ""}" data-do="go">${esc(t.confirm)}</button></div>`);
   }
 
+  _askName(node, name) {
+    const t = this.t;
+    this._sheetMac = null;
+    this._pending = null;
+    this._sheet(`<div class="grip"></div><h3>${esc(t.renameTitle)}</h3>
+      <input type="text" id="node-name" value="${esc(name)}" maxlength="63" autocomplete="off" autocapitalize="words" spellcheck="false">
+      <p class="sub">${esc(t.renameNote)}</p>
+      <div class="pair"><button class="btn ghost" data-do="close">${esc(t.cancel)}</button>
+      <button class="btn" data-do="rename-go" data-node="${esc(node)}">${esc(t.save)}</button></div>`);
+    const field = this.shadowRoot.getElementById("node-name");
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") this.shadowRoot.querySelector('[data-do="rename-go"]').click();
+    });
+    field.focus();
+    field.select();
+  }
+
   _click(event) {
     const target = event.target.closest("[data-do],[data-filter],[data-sort],[data-client]");
     if (!target) return;
@@ -558,6 +579,14 @@ class OpenWrtRouterPanel extends HTMLElement {
     switch (d.do) {
       case "close": return this._close();
       case "go": { const message = this._pending; this._close(); return message && this._act(message); }
+      case "rename": return this._askName(d.node, d.name);
+      case "rename-go": {
+        const field = this.shadowRoot.getElementById("node-name");
+        const value = field ? field.value.trim() : "";
+        if (!value) return field && field.focus();
+        this._close();
+        return this._act({ action: "rename", node: d.node, value });
+      }
       case "leds": return this._act({ action: "leds", node: d.node, value: on });
       case "reboot": return this._ask(t.askReboot.replace("{name}", d.name), { action: "reboot", node: d.node }, true);
       case "block": return this._act({ action: "block", mac: d.mac, value: on });

@@ -85,6 +85,11 @@
     }
   },
   "entity": {
+    "text": {
+      "node_name": {
+        "name": "Nome"
+      }
+    },
     "sensor": {
       "public_ip": {
         "name": "IP pubblico"

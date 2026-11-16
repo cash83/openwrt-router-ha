@@ -462,6 +462,20 @@
       return node.is_main ? this.base : this.nodeUrls.get(node.host);
     }
 
+    async renameNode(nodeId, text) {
+      // Letters, digits and hyphens, 63 at most: what a router accepts as its host name.
+      const name = String(text || "").trim().replace(/[\s_]+/g, "-").replace(/[^A-Za-z0-9-]/g, "")
+        .replace(/-{2,}/g, "-").slice(0, 63).replace(/^-+|-+$/g, "");
+      if (!name) throw new Error("Il nome deve avere almeno una lettera o una cifra.");
+      const base = this.baseOf(nodeId);
+      const values = ((await this.call("uci", "get", { config: "system" }, { base, strict: true })) || {}).values || {};
+      const section = Object.keys(values).find((key) => values[key][".type"] === "system");
+      if (!section) throw new Error("Questo nodo non ha le impostazioni di sistema.");
+      await this.call("uci", "set", { config: "system", section, values: { hostname: name } }, { base, strict: true });
+      await this.call("uci", "commit", { config: "system" }, { base, strict: true });
+      await this.call("rc", "init", { name: "system", action: "reload" }, { base, strict: true });
+    }
+
     async reboot(nodeId) {
       const base = this.baseOf(nodeId);
       try { await this.call("file", "exec", { command: "/sbin/reboot" }, { base, strict: true }); } catch (e) { /* it may drop the connection */ }
@@ -682,6 +696,7 @@
       if (message.type !== "openwrt_router/action") throw new Error("Unknown command.");
       const m = message;
       if (m.action === "reboot") await this.reboot(m.node);
+      else if (m.action === "rename") await this.renameNode(m.node, m.value);
       else if (m.action === "leds") await this.setLeds(m.node, Boolean(m.value));
       else if (m.action === "radio") await this.setRadio(m.node || null, m.band, m.setting, m.value);
       else if (m.action === "restart_radio") await this.restartRadio(m.node, m.band);
