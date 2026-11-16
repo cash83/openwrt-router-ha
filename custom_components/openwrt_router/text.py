@@ -7,11 +7,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import node_name
-from .const import DOMAIN
 from .coordinator import OpenWrtCoordinator
 from .entity import NodeEntity
 
@@ -43,9 +41,5 @@ class NodeNameText(NodeEntity, TextEntity):
         name = node_name(value)
         if not name:
             raise HomeAssistantError("A name needs at least one letter or digit")
+        # The coordinator carries the new name to the device and its entities.
         await self.coordinator.async_run(self.coordinator.api.rename_node, self._node_id, name)
-        # The device keeps the name it was created with unless told otherwise.
-        registry = dr.async_get(self.hass)
-        device = registry.async_get_device(identifiers={(DOMAIN, self._node_id)})
-        if device is not None and device.name != name:
-            registry.async_update_device(device.id, name=name)

@@ -11,7 +11,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.storage import Store
+from homeassistant.util import slugify
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import AuthError, OpenWrtApi
@@ -56,7 +58,35 @@ class OpenWrtCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:  # noqa: BLE001 - any failure is "router unreachable"
             raise UpdateFailed(f"OpenWrt router did not answer: {err}") from err
         await self._async_spot_new(data)
+        self._follow_names(data)
         return data
+
+    def _follow_names(self, data: dict[str, Any]) -> None:
+        """Carry a node's new name to its device and to the ids of its entities.
+
+        The name can change from here, from the app or on the router itself, so
+        it is checked on every reading. A device the user named by hand, and any
+        entity id that no longer starts with the old name, are left alone.
+        """
+        devices = dr.async_get(self.hass)
+        entities = er.async_get(self.hass)
+        for node_id, node in data["nodes"].items():
+            name = node.get("name")
+            device = devices.async_get_device(identifiers={(DOMAIN, node_id)})
+            if not name or device is None or not device.name or device.name == name:
+                continue
+            old, new = slugify(device.name), slugify(name)
+            devices.async_update_device(device.id, name=name)
+            if device.name_by_user or not old or not new or old == new:
+                continue
+            for entry in er.async_entries_for_device(entities, device.id, True):
+                domain, _, object_id = entry.entity_id.partition(".")
+                if object_id != old and not object_id.startswith(f"{old}_"):
+                    continue
+                wanted = f"{domain}.{new}{object_id[len(old):]}"
+                if entities.async_get(wanted) is None:
+                    entities.async_update_entity(entry.entity_id, new_entity_id=wanted)
+            _LOGGER.info("Node %s is now called %s", device.name, name)
 
     async def _async_spot_new(self, data: dict[str, Any]) -> None:
         """Flag clients never seen before, and tell Home Assistant about them."""
